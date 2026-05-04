@@ -4,7 +4,7 @@ import type { FieldState, RobotState } from "../hooks/useVisionSocket";
 interface FieldCanvasProps {
   fieldState: FieldState | null;
   myTeam: "blue" | "yellow";
-  selectedRobotId: number | null;
+  selectedRobotIds: number[];
   onRobotSelect: (id: number) => void;
   onFieldClick?: (x: number, y: number) => void;
 }
@@ -25,7 +25,7 @@ const PADDING = 40;
 export default function FieldCanvas({
   fieldState,
   myTeam,
-  selectedRobotId,
+  selectedRobotIds,
   onRobotSelect,
   onFieldClick,
 }: FieldCanvasProps) {
@@ -255,6 +255,8 @@ export default function FieldCanvas({
     const [rgx, rgy] = toCanvas(fieldLength / 2, goalWidth / 2);
     drawGlowRect(rgx, rgy, goalDepth * scale, goalWidth * scale);
 
+    const selectedSet = new Set(selectedRobotIds);
+
     // Draw robots
     const drawRobot = (
       robot: RobotState,
@@ -365,14 +367,50 @@ export default function FieldCanvas({
       ctx.fillText(String(robot.id), rx, ry);
     };
 
+    // Draw command paths before robots
+    if (fieldState.robot_commands.length > 0) {
+      const robotIndex = new Map<number, { robot: RobotState; color: string }>();
+      for (const robot of fieldState.robots_blue) {
+        robotIndex.set(robot.id, { robot, color: BLUE_COLOR });
+      }
+      for (const robot of fieldState.robots_yellow) {
+        robotIndex.set(robot.id, { robot, color: YELLOW_COLOR });
+      }
+
+      for (const cmd of fieldState.robot_commands) {
+        if (cmd.pos_x === undefined || cmd.pos_y === undefined) continue;
+        const entry = robotIndex.get(cmd.id);
+        if (!entry) continue;
+
+        const [sx, sy] = toCanvas(entry.robot.x, entry.robot.y);
+        const [tx, ty] = toCanvas(cmd.pos_x, cmd.pos_y);
+
+        ctx.save();
+        ctx.strokeStyle = entry.color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.arc(tx, ty, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
     for (const robot of fieldState.robots_blue) {
       const isMyTeam = myTeam === "blue";
-      const isSelected = isMyTeam && robot.id === selectedRobotId;
+      const isSelected = isMyTeam && selectedSet.has(robot.id);
       drawRobot(robot, BLUE_COLOR, isMyTeam, isSelected);
     }
     for (const robot of fieldState.robots_yellow) {
       const isMyTeam = myTeam === "yellow";
-      const isSelected = isMyTeam && robot.id === selectedRobotId;
+      const isSelected = isMyTeam && selectedSet.has(robot.id);
       drawRobot(robot, YELLOW_COLOR, isMyTeam, isSelected);
     }
 
@@ -421,7 +459,7 @@ export default function FieldCanvas({
       PADDING,
       h - 10
     );
-  }, [fieldState, myTeam, selectedRobotId]);
+  }, [fieldState, myTeam, selectedRobotIds]);
 
   // Animation loop for selected robot pulse
   useEffect(() => {
@@ -433,7 +471,7 @@ export default function FieldCanvas({
       animFrameRef.current = requestAnimationFrame(animate);
     };
     // Only animate if there is a selected robot, otherwise draw once
-    if (selectedRobotId !== null) {
+    if (selectedRobotIds.length > 0) {
       animFrameRef.current = requestAnimationFrame(animate);
     } else {
       draw();
@@ -442,7 +480,7 @@ export default function FieldCanvas({
       running = false;
       cancelAnimationFrame(animFrameRef.current);
     };
-  }, [draw, selectedRobotId]);
+  }, [draw, selectedRobotIds]);
 
   // Resize observer
   useEffect(() => {

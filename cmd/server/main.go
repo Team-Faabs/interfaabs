@@ -9,9 +9,9 @@ import (
 
 	root "github.com/technulgy-lgnu/crashpilot-interface"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/config"
+	"github.com/technulgy-lgnu/crashpilot-interface/internal/crashpilot"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/hub"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/server"
-	"github.com/technulgy-lgnu/crashpilot-interface/internal/vision"
 )
 
 func main() {
@@ -24,28 +24,17 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	log.Printf("config loaded: server=%s, vision=%s, tracked=%s, source=%s",
-		cfg.Server.Addr(), cfg.Vision.MulticastAddr, cfg.Vision.TrackedAddr, cfg.Vision.DefaultSource)
+	log.Printf("config loaded: server=%s, crashpilot=%s, source=%s",
+		cfg.Server.Addr(), cfg.Crashpilot.Addr(), cfg.Crashpilot.DefaultSource)
 
 	// Create hub
-	h := hub.New(cfg.Vision.DefaultSource)
+	h := hub.New(cfg.Crashpilot.DefaultSource)
 	defer h.Stop()
 
-	// Start vision receiver
-	visionRx := vision.NewReceiver(cfg.Vision.MulticastAddr, cfg.Vision.MulticastIface, h)
-	go func() {
-		if err := visionRx.Run(); err != nil {
-			log.Printf("vision receiver error: %v", err)
-		}
-	}()
-
-	// Start tracked receiver
-	trackedRx := vision.NewTrackedReceiver(cfg.Vision.TrackedAddr, cfg.Vision.MulticastIface, h)
-	go func() {
-		if err := trackedRx.Run(); err != nil {
-			log.Printf("tracked receiver error: %v", err)
-		}
-	}()
+	// Start crashpilot websocket client
+	cpClient := crashpilot.NewClient(cfg.Crashpilot.Addr(), h)
+	cpClient.Start()
+	defer cpClient.Stop()
 
 	// Prepare embedded frontend filesystem
 	frontendFS, err := fs.Sub(root.FrontendDist, "frontend/dist")
@@ -54,7 +43,7 @@ func main() {
 	}
 
 	// Create and start server
-	srv := server.New(cfg, h, frontendFS)
+	srv := server.New(cfg, h, cpClient, frontendFS)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

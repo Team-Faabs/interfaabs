@@ -108,15 +108,15 @@ export default function DebugPanel({
                   <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
                   <line x1="12" y1="20" x2="12.01" y2="20" />
                 </svg>
-                UDP Sources
+                Streams
               </h4>
               <div className="space-y-2">
                 <ConnectionStatus
-                  label="Vision UDP"
+                  label="Vision Raw"
                   connected={stats?.vision_connected ?? false}
                 />
                 <ConnectionStatus
-                  label="Tracked UDP"
+                  label="Vision Tracked"
                   connected={stats?.tracked_connected ?? false}
                 />
               </div>

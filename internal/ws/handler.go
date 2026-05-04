@@ -8,18 +8,17 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	gwebscoker "github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/technulgy-lgnu/crashpilot-interface/gen/proto"
-	"github.com/technulgy-lgnu/crashpilot-interface/internal/config"
+	"github.com/technulgy-lgnu/crashpilot-interface/internal/crashpilot"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/hub"
 )
 
 // Handler manages websocket endpoints.
 type Handler struct {
-	hub    *hub.Hub
-	cmdCfg config.CommandTargetConfig
+	hub *hub.Hub
+	cp  *crashpilot.Client
 
 	// Command broadcast
 	cmdSubMu sync.RWMutex
@@ -27,10 +26,10 @@ type Handler struct {
 }
 
 // NewHandler creates a new websocket handler.
-func NewHandler(h *hub.Hub, cmdCfg config.CommandTargetConfig) *Handler {
+func NewHandler(h *hub.Hub, cp *crashpilot.Client) *Handler {
 	return &Handler{
 		hub:     h,
-		cmdCfg:  cmdCfg,
+		cp:      cp,
 		cmdSubs: make(map[chan []byte]struct{}),
 	}
 }
@@ -69,7 +68,7 @@ func (wh *Handler) handleVision(c *websocket.Conn) {
 	}
 }
 
-// handleCommand receives protobuf-encoded CP_Interface messages from the client.
+// handleCommand receives protobuf-encoded InterfaceWrapper_CP messages from the client.
 func (wh *Handler) handleCommand(c *websocket.Conn) {
 	for {
 		msgType, msg, err := c.ReadMessage()
@@ -83,17 +82,16 @@ func (wh *Handler) handleCommand(c *websocket.Conn) {
 			continue
 		}
 
-		cpMsg := &pb.CP_Interface{}
+		cpMsg := &pb.InterfaceWrapper_CP{}
 		if err := proto.Unmarshal(msg, cpMsg); err != nil {
 			log.Printf("ws/command: unmarshal error: %v", err)
 			continue
 		}
 
-		log.Printf("ws/command: received command for robot %d", cpMsg.GetRobotId())
+		log.Printf("ws/command: received %d robot commands", len(cpMsg.GetRobotCommands()))
 
-		// Forward to command target if configured
-		if addr := wh.cmdCfg.Addr(); addr != "" {
-			go wh.forwardCommand(msg)
+		if err := wh.cp.Send(msg); err != nil {
+			log.Printf("ws/command: failed to send to crashpilot: %v", err)
 		}
 
 		// Broadcast raw protobuf to command stream subscribers
@@ -163,27 +161,6 @@ func (wh *Handler) handleSource(c *websocket.Conn) {
 		if err := c.WriteMessage(websocket.TextMessage, respData); err != nil {
 			return
 		}
-	}
-}
-
-func (wh *Handler) forwardCommand(data []byte) {
-	addr := wh.cmdCfg.Addr()
-
-	c, _, err := gwebscoker.DefaultDialer.Dial(addr, nil)
-	if err != nil {
-		log.Printf("ws/command: failed to connect to command target at %s: %v", addr, err)
-		return
-	}
-	defer func(c *gwebscoker.Conn) {
-		err := c.Close()
-		if err != nil {
-			log.Printf("ws/command: failed to close connection to command target at %s: %v", addr, err)
-		}
-	}(c)
-
-	err = c.WriteMessage(websocket.BinaryMessage, data)
-	if err != nil {
-		log.Printf("ws/command: failed to send command to command target at %s: %v", addr, err)
 	}
 }
 
