@@ -8,9 +8,8 @@ import (
 )
 
 type Config struct {
-	Server        ServerConfig        `toml:"server"`
-	Vision        VisionConfig        `toml:"vision"`
-	CommandTarget CommandTargetConfig `toml:"command_target"`
+	Server     ServerConfig     `toml:"server"`
+	Crashpilot CrashpilotConfig `toml:"crashpilot"`
 }
 
 type ServerConfig struct {
@@ -18,17 +17,9 @@ type ServerConfig struct {
 	Port int    `toml:"port"`
 }
 
-type VisionConfig struct {
-	MulticastAddr  string `toml:"multicast_addr"`
-	MulticastIface string `toml:"multicast_iface"`
-	TrackedAddr    string `toml:"tracked_addr"`
-	DefaultSource  string `toml:"default_source"`
-}
-
-type CommandTargetConfig struct {
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
-	Protocol string `toml:"protocol"`
+type CrashpilotConfig struct {
+	WsURL         string `toml:"ws_url"`
+	DefaultSource string `toml:"default_source"`
 }
 
 // Load attempts to load config.toml from the given paths in order.
@@ -52,10 +43,10 @@ func (s *ServerConfig) Addr() string {
 	return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }
 
-// Addr CommandTargetAddr returns the command target address, or empty if not configured.
-func (c *CommandTargetConfig) Addr() string {
-	if c.Host == "" || c.Port == 0 {
+// Addr returns the crashpilot websocket address, or empty if not configured.
+func (c *CrashpilotConfig) Addr() string {
+	if c.WsURL == "" {
 		return ""
 	}
-	return fmt.Sprintf("ws://%s:%d", c.Host, c.Port)
+	return c.WsURL
 }

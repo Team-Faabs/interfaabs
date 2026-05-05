@@ -55,12 +55,25 @@ export interface VisionStats {
   tracked_connected: boolean;
 }
 
+export interface RobotCommandState {
+  id: number;
+  state: number;
+  task: number;
+  pos_x?: number;
+  pos_y?: number;
+  orientation?: number;
+  kick_orient?: number;
+  speed?: number;
+  kick_speed?: number;
+}
+
 export interface FieldState {
   source: string;
   geometry?: FieldGeometry;
   balls: BallState[];
   robots_blue: RobotState[];
   robots_yellow: RobotState[];
+  robot_commands: RobotCommandState[];
   stats: VisionStats;
 }
 

@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import type { RobotState } from "../hooks/useVisionSocket";
-import type { SentCommand } from "../hooks/useCommandSocket";
+import type {
+  SentCommand,
+  RobotCommand,
+} from "../hooks/useCommandSocket";
 
 const STATE_OPTIONS = [
   { value: 0, label: "Unspecified" },
@@ -8,6 +11,7 @@ const STATE_OPTIONS = [
   { value: 2, label: "Stop" },
   { value: 3, label: "Free" },
   { value: 4, label: "Goalie" },
+  { value: 5, label: "Substitute" },
 ];
 
 const TASK_OPTIONS = [
@@ -19,24 +23,14 @@ const TASK_OPTIONS = [
   { value: 5, label: "Steal" },
   { value: 6, label: "Dribble" },
   { value: 7, label: "Position Ball" },
-  { value: 8, label: "Receive Ball" },
   { value: 9, label: "Kickoff" },
-  { value: 10, label: "Ball Placement" },
   { value: 11, label: "Free Kick" },
 ];
 
 interface RobotPanelProps {
-  selectedRobotId: number | null;
+  selectedRobotIds: number[];
   robotData: RobotState | undefined;
-  onSendCommand: (
-    robotId: number,
-    state: number,
-    task: number,
-    posX?: number,
-    posY?: number,
-    orientation?: number,
-    kickOrient?: number
-  ) => void;
+  onSendCommands: (robotIds: number[], command: Omit<RobotCommand, "robotId">) => void;
   commandHistory: SentCommand[];
   fieldClickPos: { x: number; y: number } | null;
 }
@@ -51,9 +45,9 @@ const labelClasses =
   "block text-[11px] font-medium text-slate-400 mb-1.5 tracking-wide";
 
 export default function RobotPanel({
-  selectedRobotId,
+  selectedRobotIds,
   robotData,
-  onSendCommand,
+  onSendCommands,
   commandHistory,
   fieldClickPos,
 }: RobotPanelProps) {
@@ -63,6 +57,8 @@ export default function RobotPanel({
   const [posY, setPosY] = useState("");
   const [orientation, setOrientation] = useState("");
   const [kickOrient, setKickOrient] = useState("");
+  const [speed, setSpeed] = useState("");
+  const [kickSpeed, setKickSpeed] = useState("");
 
   useEffect(() => {
     if (fieldClickPos) {
@@ -72,45 +68,49 @@ export default function RobotPanel({
   }, [fieldClickPos]);
 
   const handleSend = useCallback(() => {
-    if (selectedRobotId === null) return;
+    if (selectedRobotIds.length === 0) return;
 
     const px = posX !== "" ? parseFloat(posX) : undefined;
     const py = posY !== "" ? parseFloat(posY) : undefined;
-    const orient =
-      orientation !== ""
-        ? (parseFloat(orientation) * Math.PI) / 180
-        : undefined;
-    const ko =
-      kickOrient !== ""
-        ? (parseFloat(kickOrient) * Math.PI) / 180
-        : undefined;
+    const orient = orientation !== "" ? parseFloat(orientation) : undefined;
+    const ko = kickOrient !== "" ? parseFloat(kickOrient) : undefined;
+    const spd = speed !== "" ? parseFloat(speed) : undefined;
+    const kspd = kickSpeed !== "" ? parseFloat(kickSpeed) : undefined;
 
-    onSendCommand(
-      selectedRobotId,
+    onSendCommands(selectedRobotIds, {
       state,
       task,
-      px !== undefined && py !== undefined ? px : undefined,
-      px !== undefined && py !== undefined ? py : undefined,
-      orient,
-      ko
-    );
+      posX: px !== undefined && py !== undefined ? px : undefined,
+      posY: px !== undefined && py !== undefined ? py : undefined,
+      orientation: orient,
+      kickOrient: ko,
+      speed: spd,
+      kickSpeed: kspd,
+    });
   }, [
-    selectedRobotId,
+    selectedRobotIds,
     state,
     task,
     posX,
     posY,
     orientation,
     kickOrient,
-    onSendCommand,
+    speed,
+    kickSpeed,
+    onSendCommands,
   ]);
+
+  const selectedLabel =
+    selectedRobotIds.length === 1
+      ? `Robot #${selectedRobotIds[0]}`
+      : `Selected (${selectedRobotIds.length})`;
 
   const stateLabel = (v: number) =>
     STATE_OPTIONS.find((s) => s.value === v)?.label ?? "?";
   const taskLabel = (v: number) =>
     TASK_OPTIONS.find((t) => t.value === v)?.label ?? "?";
 
-  if (selectedRobotId === null) {
+  if (selectedRobotIds.length === 0) {
     return (
       <div className="p-6 text-center animate-fade-in">
         <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-slate-800/60 border border-slate-700/40 flex items-center justify-center">
@@ -140,14 +140,14 @@ export default function RobotPanel({
         <div className="flex items-center gap-2 mb-2">
           <div className="w-6 h-6 rounded-md bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
             <span className="text-xs font-bold text-cyan-400 font-mono">
-              {selectedRobotId}
+              {selectedRobotIds.length}
             </span>
           </div>
           <h3 className="text-sm font-semibold text-slate-200">
-            Robot #{selectedRobotId}
+            {selectedLabel}
           </h3>
         </div>
-        {robotData ? (
+        {selectedRobotIds.length === 1 && robotData ? (
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs font-mono">
             <span className="text-cyan-400/70">X</span>
             <span className="text-slate-300 text-right">
@@ -166,15 +166,19 @@ export default function RobotPanel({
               {(robotData.confidence * 100).toFixed(0)}%
             </span>
           </div>
-        ) : (
+        ) : selectedRobotIds.length === 1 ? (
           <span className="text-xs text-slate-500 italic">
             No telemetry data
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500 italic">
+            Multiple robots selected
           </span>
         )}
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-gradient-to-r from-transparent via-slate-700/40 to-transparent" />
+      <div className="h-px bg-linear-to-r from-transparent via-slate-700/40 to-transparent" />
 
       {/* State selector */}
       <div>
@@ -235,7 +239,7 @@ export default function RobotPanel({
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-gradient-to-r from-transparent via-slate-700/40 to-transparent" />
+      <div className="h-px bg-linear-to-r from-transparent via-slate-700/40 to-transparent" />
 
       {/* Position */}
       <div>
@@ -285,6 +289,30 @@ export default function RobotPanel({
         />
       </div>
 
+      {/* Speed */}
+      <div>
+        <label className={labelClasses}>Speed</label>
+        <input
+          type="number"
+          placeholder="0"
+          value={speed}
+          onChange={(e) => setSpeed(e.target.value)}
+          className={inputClasses}
+        />
+      </div>
+
+      {/* Kick Speed */}
+      <div>
+        <label className={labelClasses}>Kick Speed</label>
+        <input
+          type="number"
+          placeholder="0"
+          value={kickSpeed}
+          onChange={(e) => setKickSpeed(e.target.value)}
+          className={inputClasses}
+        />
+      </div>
+
       {/* Send button */}
       <button
         onClick={handleSend}
@@ -293,10 +321,11 @@ export default function RobotPanel({
         Send Command
       </button>
 
+
       {/* Command history */}
       {commandHistory.length > 0 && (
         <div className="mt-1">
-          <div className="h-px bg-gradient-to-r from-transparent via-slate-700/40 to-transparent mb-2" />
+          <div className="h-px bg-linear-to-r from-transparent via-slate-700/40 to-transparent mb-2" />
           <h4 className="text-[10px] text-cyan-400/60 mb-2 uppercase tracking-[0.15em] font-semibold flex items-center gap-1.5">
             <svg
               className="w-3 h-3"

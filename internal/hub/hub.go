@@ -10,12 +10,13 @@ import (
 
 // FieldState is the normalized JSON representation sent to websocket clients.
 type FieldState struct {
-	Source       string       `json:"source"`
-	Geometry     *GeometryJSON `json:"geometry,omitempty"`
-	Balls        []BallJSON   `json:"balls"`
-	RobotsBlue   []RobotJSON  `json:"robots_blue"`
-	RobotsYellow []RobotJSON  `json:"robots_yellow"`
-	Stats        DebugStats   `json:"stats"`
+	Source        string             `json:"source"`
+	Geometry      *GeometryJSON      `json:"geometry,omitempty"`
+	Balls         []BallJSON         `json:"balls"`
+	RobotsBlue    []RobotJSON        `json:"robots_blue"`
+	RobotsYellow  []RobotJSON        `json:"robots_yellow"`
+	RobotCommands []RobotCommandJSON `json:"robot_commands"`
+	Stats         DebugStats         `json:"stats"`
 }
 
 type GeometryJSON struct {
@@ -62,15 +63,27 @@ type RobotJSON struct {
 	Confidence  float64 `json:"confidence"`
 }
 
+type RobotCommandJSON struct {
+	Id          uint32   `json:"id"`
+	State       uint32   `json:"state"`
+	Task        uint32   `json:"task"`
+	PosX        *float64 `json:"pos_x,omitempty"`
+	PosY        *float64 `json:"pos_y,omitempty"`
+	Orientation *float64 `json:"orientation,omitempty"`
+	KickOrient  *float64 `json:"kick_orient,omitempty"`
+	Speed       *uint32  `json:"speed,omitempty"`
+	KickSpeed   *uint32  `json:"kick_speed,omitempty"`
+}
+
 type DebugStats struct {
-	VisionPackets    uint64  `json:"vision_packets"`
-	TrackedPackets   uint64  `json:"tracked_packets"`
-	PacketsPerSec    float64 `json:"packets_per_sec"`
-	LastPacketTime   int64   `json:"last_packet_time"`
+	VisionPackets     uint64  `json:"vision_packets"`
+	TrackedPackets    uint64  `json:"tracked_packets"`
+	PacketsPerSec     float64 `json:"packets_per_sec"`
+	LastPacketTime    int64   `json:"last_packet_time"`
 	ProcessingDelayMs float64 `json:"processing_delay_ms"`
-	ActiveSource     string  `json:"active_source"`
-	VisionConnected  bool    `json:"vision_connected"`
-	TrackedConnected bool    `json:"tracked_connected"`
+	ActiveSource      string  `json:"active_source"`
+	VisionConnected   bool    `json:"vision_connected"`
+	TrackedConnected  bool    `json:"tracked_connected"`
 }
 
 // Hub is the central state manager.
@@ -92,10 +105,13 @@ type Hub struct {
 	trackedRobotsBlue   []RobotJSON
 	trackedRobotsYellow []RobotJSON
 
+	// Robot command targets
+	robotCommands []RobotCommandJSON
+
 	// Stats
-	visionPackets  uint64
-	trackedPackets uint64
-	lastPacketTime time.Time
+	visionPackets    uint64
+	trackedPackets   uint64
+	lastPacketTime   time.Time
 	visionConnected  bool
 	trackedConnected bool
 
@@ -222,6 +238,63 @@ func (h *Hub) UpdateTracked(wrapper *pb.TrackerWrapperPacket) {
 	h.triggerBroadcast()
 }
 
+// UpdateRobotCommands stores the latest robot command targets from Crashpilot.
+func (h *Hub) UpdateRobotCommands(commands []*pb.CP_Robot) {
+	h.mu.Lock()
+	if len(commands) == 0 {
+		h.robotCommands = nil
+		h.mu.Unlock()
+		return
+	}
+
+	cmds := make([]RobotCommandJSON, 0, len(commands))
+	for _, r := range commands {
+		if r == nil {
+			continue
+		}
+		cmd := r.GetCmd()
+		if cmd == nil {
+			continue
+		}
+
+		entry := RobotCommandJSON{
+			Id:    r.GetRobotId(),
+			State: uint32(cmd.GetState()),
+			Task:  uint32(cmd.GetTask()),
+		}
+
+		if pos := cmd.GetPos(); pos != nil {
+			x := float64(pos.GetX())
+			y := float64(pos.GetY())
+			entry.PosX = &x
+			entry.PosY = &y
+		}
+		if cmd.Orientation != nil {
+			v := float64(cmd.GetOrientation())
+			entry.Orientation = &v
+		}
+		if cmd.KickOrient != nil {
+			v := float64(cmd.GetKickOrient())
+			entry.KickOrient = &v
+		}
+		if cmd.Speed != nil {
+			v := cmd.GetSpeed()
+			entry.Speed = &v
+		}
+		if cmd.KickSpeed != nil {
+			v := cmd.GetKickSpeed()
+			entry.KickSpeed = &v
+		}
+
+		cmds = append(cmds, entry)
+	}
+
+	h.robotCommands = cmds
+	h.mu.Unlock()
+
+	h.triggerBroadcast()
+}
+
 func (h *Hub) triggerBroadcast() {
 	select {
 	case h.notify <- struct{}{}:
@@ -244,8 +317,9 @@ func (h *Hub) buildState() *FieldState {
 	defer h.mu.RUnlock()
 
 	state := &FieldState{
-		Source:   h.activeSource,
-		Geometry: h.geometry,
+		Source:        h.activeSource,
+		Geometry:      h.geometry,
+		RobotCommands: h.robotCommands,
 	}
 
 	if h.activeSource == "tracked" {
@@ -267,6 +341,9 @@ func (h *Hub) buildState() *FieldState {
 	}
 	if state.RobotsYellow == nil {
 		state.RobotsYellow = []RobotJSON{}
+	}
+	if state.RobotCommands == nil {
+		state.RobotCommands = []RobotCommandJSON{}
 	}
 
 	var pps float64
@@ -417,12 +494,18 @@ func convertTrackedRobots(robots []*pb.TrackedRobot) (blue []RobotJSON, yellow [
 }
 
 func convertGeometry(field *pb.SSL_GeometryFieldSize) *GeometryJSON {
+	unitScale := 1.0
+	if field.GetFieldLength() > 0 && field.GetFieldLength() < 1000 {
+		// Some sources report meters; normalize to millimeters.
+		unitScale = 1000.0
+	}
+
 	geo := &GeometryJSON{
-		FieldLength:   float64(field.GetFieldLength()),
-		FieldWidth:    float64(field.GetFieldWidth()),
-		GoalWidth:     float64(field.GetGoalWidth()),
-		GoalDepth:     float64(field.GetGoalDepth()),
-		BoundaryWidth: float64(field.GetBoundaryWidth()),
+		FieldLength:   float64(field.GetFieldLength()) * unitScale,
+		FieldWidth:    float64(field.GetFieldWidth()) * unitScale,
+		GoalWidth:     float64(field.GetGoalWidth()) * unitScale,
+		GoalDepth:     float64(field.GetGoalDepth()) * unitScale,
+		BoundaryWidth: float64(field.GetBoundaryWidth()) * unitScale,
 	}
 
 	for _, line := range field.GetFieldLines() {
@@ -431,15 +514,15 @@ func convertGeometry(field *pb.SSL_GeometryFieldSize) *GeometryJSON {
 		}
 		lj := LineJSON{
 			Name:      line.GetName(),
-			Thickness: float64(line.GetThickness()),
+			Thickness: float64(line.GetThickness()) * unitScale,
 		}
 		if p1 := line.GetP1(); p1 != nil {
-			lj.P1X = float64(p1.GetX())
-			lj.P1Y = float64(p1.GetY())
+			lj.P1X = float64(p1.GetX()) * unitScale
+			lj.P1Y = float64(p1.GetY()) * unitScale
 		}
 		if p2 := line.GetP2(); p2 != nil {
-			lj.P2X = float64(p2.GetX())
-			lj.P2Y = float64(p2.GetY())
+			lj.P2X = float64(p2.GetX()) * unitScale
+			lj.P2Y = float64(p2.GetY()) * unitScale
 		}
 		geo.Lines = append(geo.Lines, lj)
 	}
@@ -450,14 +533,14 @@ func convertGeometry(field *pb.SSL_GeometryFieldSize) *GeometryJSON {
 		}
 		aj := ArcJSON{
 			Name:      arc.GetName(),
-			Radius:    float64(arc.GetRadius()),
+			Radius:    float64(arc.GetRadius()) * unitScale,
 			A1:        float64(arc.GetA1()),
 			A2:        float64(arc.GetA2()),
-			Thickness: float64(arc.GetThickness()),
+			Thickness: float64(arc.GetThickness()) * unitScale,
 		}
 		if c := arc.GetCenter(); c != nil {
-			aj.CenterX = float64(c.GetX())
-			aj.CenterY = float64(c.GetY())
+			aj.CenterX = float64(c.GetX()) * unitScale
+			aj.CenterY = float64(c.GetY()) * unitScale
 		}
 		geo.Arcs = append(geo.Arcs, aj)
 	}

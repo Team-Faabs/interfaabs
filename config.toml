@@ -2,20 +2,9 @@
 host = "0.0.0.0"
 port = 8080
 
-[vision]
-# SSL Vision raw multicast
-multicast_addr = "224.5.23.2:10006"
-multicast_iface = ""  # Leave empty for default interface
-
-# SSL Vision tracked multicast
-tracked_addr = "224.5.23.2:10010"
+[crashpilot]
+# Crashpilot websocket endpoint used for commands and vision/tracked streaming
+ws_url = "ws://127.0.0.1:4096/ws"
 
 # Default source: "vision" or "tracked"
-default_source = "vision"
-
-[command_target]
-# Where to forward commands (the robot gateway)
-# Leave empty to only log commands
-host = "10.0.64.221"
-port = 4096
-protocol = "tcp"  # "udp" or "tcp"
+default_source = "tracked"

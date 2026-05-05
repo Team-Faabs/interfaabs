@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/config"
+	"github.com/technulgy-lgnu/crashpilot-interface/internal/crashpilot"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/hub"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/ws"
 )
@@ -21,7 +22,7 @@ type Server struct {
 }
 
 // New creates a new server with the given config, hub, and embedded frontend filesystem.
-func New(cfg *config.Config, h *hub.Hub, frontendFS fs.FS) *Server {
+func New(cfg *config.Config, h *hub.Hub, cpClient *crashpilot.Client, frontendFS fs.FS) *Server {
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
 	})
@@ -34,7 +35,7 @@ func New(cfg *config.Config, h *hub.Hub, frontendFS fs.FS) *Server {
 	}))
 
 	// WebSocket handlers
-	wsHandler := ws.NewHandler(h, cfg.CommandTarget)
+	wsHandler := ws.NewHandler(h, cpClient)
 	wsHandler.Register(app)
 	wsHandler.RegisterREST(app)
 
@@ -45,9 +46,9 @@ func New(cfg *config.Config, h *hub.Hub, frontendFS fs.FS) *Server {
 
 	// Serve embedded frontend static files
 	app.Use("/", filesystem.New(filesystem.Config{
-		Root:       http.FS(frontendFS),
-		Browse:     false,
-		Index:      "index.html",
+		Root:         http.FS(frontendFS),
+		Browse:       false,
+		Index:        "index.html",
 		NotFoundFile: "index.html", // SPA fallback
 	}))
 

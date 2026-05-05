@@ -1,53 +1,119 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useVisionSocket } from "./hooks/useVisionSocket";
-import { useCommandSocket } from "./hooks/useCommandSocket";
+import { useCommandSocket, InterfaceCommandOptions } from "./hooks/useCommandSocket";
 import FieldCanvas from "./components/FieldCanvas";
 import TeamSelector from "./components/TeamSelector";
 import RobotPanel from "./components/RobotPanel";
 import DebugPanel from "./components/DebugPanel";
+import VisionPanel from "./components/VisionPanel";
+import CrashpilotOptionsPanel from "./components/CrashpilotOptionsPanel";
 
 export default function App() {
   const [myTeam, setMyTeam] = useState<"blue" | "yellow">("blue");
-  const [selectedRobotId, setSelectedRobotId] = useState<number | null>(null);
+  const [selectedRobotIds, setSelectedRobotIds] = useState<number[]>([]);
+  const [multiSelect, setMultiSelect] = useState(false);
   const [fieldClickPos, setFieldClickPos] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const [interfaceCommand, setInterfaceCommand] = useState<InterfaceCommandOptions>({
+    enableTestfield: false,
+    testfield: 0,
+    ballTracked: true,
+    gcData: true,
+  });
 
   const { fieldState, connected: visionConnected } = useVisionSocket();
   const {
-    sendCommand,
+    sendCommands,
+    sendInterfaceCommand,
     connected: commandConnected,
     commandHistory,
   } = useCommandSocket();
 
-  const handleRobotSelect = useCallback((id: number) => {
-    setSelectedRobotId(id);
-  }, []);
+  useEffect(() => {
+    if (!multiSelect && selectedRobotIds.length > 1) {
+      setSelectedRobotIds([selectedRobotIds[0]]);
+    }
+  }, [multiSelect, selectedRobotIds]);
+
+  const handleRobotSelect = useCallback(
+    (id: number) => {
+      setSelectedRobotIds((prev) => {
+        if (!multiSelect) {
+          return [id];
+        }
+        return prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id];
+      });
+    },
+    [multiSelect]
+  );
 
   const handleFieldClick = useCallback((x: number, y: number) => {
     setFieldClickPos({ x, y });
   }, []);
 
+  const myTeamRobots =
+    (myTeam === "blue" ? fieldState?.robots_blue : fieldState?.robots_yellow) ?? [];
+  const allRobotIds = [
+    ...(fieldState?.robots_blue ?? []).map((r) => r.id),
+    ...(fieldState?.robots_yellow ?? []).map((r) => r.id),
+  ];
+
+  const selectedRobotId = selectedRobotIds.length === 1 ? selectedRobotIds[0] : null;
   const selectedRobotData =
     selectedRobotId !== null
-      ? (myTeam === "blue"
-          ? fieldState?.robots_blue
-          : fieldState?.robots_yellow
-        )?.find((r) => r.id === selectedRobotId)
+      ? myTeamRobots.find((r) => r.id === selectedRobotId)
       : undefined;
+
+  const handleSendCommands = useCallback(
+    (robotIds: number[], command: Omit<Parameters<typeof sendCommands>[0][number], "robotId">) => {
+      if (robotIds.length === 0) return;
+      sendCommands(
+        robotIds.map((robotId) => ({ robotId, ...command })),
+        interfaceCommand
+      );
+    },
+    [sendCommands, interfaceCommand]
+  );
+
+  const handleStopAll = useCallback(() => {
+    handleSendCommands(allRobotIds, { state: 2, task: 0 });
+  }, [allRobotIds, handleSendCommands]);
+
+  const handleHaltAll = useCallback(() => {
+    handleSendCommands(allRobotIds, { state: 1, task: 0 });
+  }, [allRobotIds, handleSendCommands]);
+
+  const handleSwitchSource = useCallback((source: "vision" | "tracked") => {
+    void fetch("/api/source", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source }),
+    }).catch((error) => {
+      console.error("Failed to switch source:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    sendInterfaceCommand(interfaceCommand);
+  }, [interfaceCommand, sendInterfaceCommand]);
+
+  const stats = fieldState?.stats;
 
   return (
     <div className="h-full flex flex-col bg-dot-pattern text-slate-100">
       {/* Top header bar */}
       <header className="flex items-center justify-between px-5 py-2.5 bg-slate-900/80 backdrop-blur-xl border-b border-slate-700/40 shrink-0 relative">
         {/* Accent line at bottom of header */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-cyan-500/30 to-transparent" />
 
         <div className="flex items-center gap-4">
           {/* Logo / App name */}
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <div className="w-7 h-7 rounded-lg bg-linear-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
               <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
@@ -99,7 +165,7 @@ export default function App() {
             <FieldCanvas
               fieldState={fieldState}
               myTeam={myTeam}
-              selectedRobotId={selectedRobotId}
+              selectedRobotIds={selectedRobotIds}
               onRobotSelect={handleRobotSelect}
               onFieldClick={handleFieldClick}
             />
@@ -107,7 +173,7 @@ export default function App() {
         </div>
 
         {/* Right: Command panel */}
-        <div className="w-[300px] shrink-0 glass-panel panel-accent flex flex-col overflow-hidden">
+        <div className="w-75 shrink-0 glass-panel panel-accent flex flex-col overflow-hidden">
           {/* Team selector section */}
           <div className="p-3 border-b border-slate-700/30">
             <h2 className="text-[10px] font-semibold text-cyan-400/80 uppercase tracking-[0.15em] mb-2 flex items-center gap-1.5">
@@ -122,28 +188,80 @@ export default function App() {
             <TeamSelector team={myTeam} onTeamChange={setMyTeam} />
           </div>
 
-          {/* Robot selector */}
+          <VisionPanel stats={stats} onSwitchSource={handleSwitchSource} />
+
+          <CrashpilotOptionsPanel
+            interfaceCommand={interfaceCommand}
+            onInterfaceCommandChange={setInterfaceCommand}
+          />
+
           <div className="px-3 py-2.5 border-b border-slate-700/30">
             <h2 className="text-[10px] font-semibold text-cyan-400/80 uppercase tracking-[0.15em] mb-2 flex items-center gap-1.5">
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <circle cx="12" cy="5" r="4" />
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 2v20" />
+                <path d="M2 12h20" />
               </svg>
-              Robots
+              Global Control
             </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleStopAll}
+                className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-amber-500/80 hover:bg-amber-500 transition"
+              >
+                Stop All
+              </button>
+              <button
+                onClick={handleHaltAll}
+                className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-red-600/80 hover:bg-red-600 transition"
+              >
+                Halt All
+              </button>
+            </div>
+          </div>
+
+          {/* Robot selector */}
+          <div className="px-3 py-2.5 border-b border-slate-700/30">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-[10px] font-semibold text-cyan-400/80 uppercase tracking-[0.15em] flex items-center gap-1.5">
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <circle cx="12" cy="5" r="4" />
+                </svg>
+                Robots
+              </h2>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={multiSelect}
+                    onChange={(e) => setMultiSelect(e.target.checked)}
+                  />
+                  Multi
+                </label>
+                <button
+                  onClick={() => setSelectedRobotIds([])}
+                  className="text-slate-400 hover:text-slate-200"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1.5">
-              {(myTeam === "blue"
-                ? fieldState?.robots_blue
-                : fieldState?.robots_yellow
-              )
-                ?.slice()
+              {myTeamRobots
+                .slice()
                 .sort((a, b) => a.id - b.id)
                 .map((robot) => (
                   <button
                     key={robot.id}
                     onClick={() => handleRobotSelect(robot.id)}
                     className={`w-9 h-9 rounded-lg text-xs font-bold transition-all duration-200 border ${
-                      selectedRobotId === robot.id
+                      selectedRobotIds.includes(robot.id)
                         ? myTeam === "blue"
                           ? "bg-blue-600 text-white border-blue-400/60 shadow-[0_0_12px_rgba(59,130,246,0.4)] animate-glow-blue"
                           : "bg-amber-500 text-slate-900 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.4)] animate-glow-yellow"
@@ -174,9 +292,9 @@ export default function App() {
               </h2>
             </div>
             <RobotPanel
-              selectedRobotId={selectedRobotId}
+              selectedRobotIds={selectedRobotIds}
               robotData={selectedRobotData}
-              onSendCommand={sendCommand}
+              onSendCommands={handleSendCommands}
               commandHistory={commandHistory}
               fieldClickPos={fieldClickPos}
             />
