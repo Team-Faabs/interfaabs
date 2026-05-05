@@ -4,7 +4,7 @@ port = 8080
 
 [crashpilot]
 # Crashpilot websocket endpoint used for commands and vision/tracked streaming
-ws_url = "ws://10.0.64.221:4096/ws"
+ws_url = "ws://127.0.0.1:4096/ws"
 
 # Default source: "vision" or "tracked"
 default_source = "tracked"

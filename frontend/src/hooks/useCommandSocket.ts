@@ -135,6 +135,36 @@ export function useCommandSocket() {
     };
   }, [connect]);
 
+  const sendInterfaceCommand = useCallback(
+    (interfaceCommand: InterfaceCommandOptions) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error("Command WebSocket not connected");
+        return;
+      }
+
+      const payload = {
+        robot_commands: [],
+        interface_command: {
+          enable_testfield: interfaceCommand.enableTestfield,
+          testfield: interfaceCommand.testfield,
+          ball_tracked: interfaceCommand.ballTracked,
+          gc_data: interfaceCommand.gcData,
+        },
+      };
+
+      const errMsg = InterfaceWrapperCP.verify(payload);
+      if (errMsg) {
+        console.error("Protobuf verification failed:", errMsg);
+        return;
+      }
+
+      const message = InterfaceWrapperCP.create(payload);
+      const buffer = InterfaceWrapperCP.encode(message).finish();
+      wsRef.current.send(buffer);
+    },
+    []
+  );
+
   const sendCommands = useCallback(
     (commands: RobotCommand[], interfaceCommand: InterfaceCommandOptions) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -209,5 +239,5 @@ export function useCommandSocket() {
     []
   );
 
-  return { sendCommands, connected, lastSentCommand, commandHistory };
+  return { sendCommands, sendInterfaceCommand, connected, lastSentCommand, commandHistory };
 }

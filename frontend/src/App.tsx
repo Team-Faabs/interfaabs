@@ -5,6 +5,8 @@ import FieldCanvas from "./components/FieldCanvas";
 import TeamSelector from "./components/TeamSelector";
 import RobotPanel from "./components/RobotPanel";
 import DebugPanel from "./components/DebugPanel";
+import VisionPanel from "./components/VisionPanel";
+import CrashpilotOptionsPanel from "./components/CrashpilotOptionsPanel";
 
 export default function App() {
   const [myTeam, setMyTeam] = useState<"blue" | "yellow">("blue");
@@ -24,6 +26,7 @@ export default function App() {
   const { fieldState, connected: visionConnected } = useVisionSocket();
   const {
     sendCommands,
+    sendInterfaceCommand,
     connected: commandConnected,
     commandHistory,
   } = useCommandSocket();
@@ -52,7 +55,10 @@ export default function App() {
 
   const myTeamRobots =
     (myTeam === "blue" ? fieldState?.robots_blue : fieldState?.robots_yellow) ?? [];
-  const myTeamRobotIds = myTeamRobots.map((r) => r.id);
+  const allRobotIds = [
+    ...(fieldState?.robots_blue ?? []).map((r) => r.id),
+    ...(fieldState?.robots_yellow ?? []).map((r) => r.id),
+  ];
 
   const selectedRobotId = selectedRobotIds.length === 1 ? selectedRobotIds[0] : null;
   const selectedRobotData =
@@ -70,6 +76,32 @@ export default function App() {
     },
     [sendCommands, interfaceCommand]
   );
+
+  const handleStopAll = useCallback(() => {
+    handleSendCommands(allRobotIds, { state: 2, task: 0 });
+  }, [allRobotIds, handleSendCommands]);
+
+  const handleHaltAll = useCallback(() => {
+    handleSendCommands(allRobotIds, { state: 1, task: 0 });
+  }, [allRobotIds, handleSendCommands]);
+
+  const handleSwitchSource = useCallback((source: "vision" | "tracked") => {
+    void fetch("/api/source", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source }),
+    }).catch((error) => {
+      console.error("Failed to switch source:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    sendInterfaceCommand(interfaceCommand);
+  }, [interfaceCommand, sendInterfaceCommand]);
+
+  const stats = fieldState?.stats;
 
   return (
     <div className="h-full flex flex-col bg-dot-pattern text-slate-100">
@@ -156,6 +188,43 @@ export default function App() {
             <TeamSelector team={myTeam} onTeamChange={setMyTeam} />
           </div>
 
+          <VisionPanel stats={stats} onSwitchSource={handleSwitchSource} />
+
+          <CrashpilotOptionsPanel
+            interfaceCommand={interfaceCommand}
+            onInterfaceCommandChange={setInterfaceCommand}
+          />
+
+          <div className="px-3 py-2.5 border-b border-slate-700/30">
+            <h2 className="text-[10px] font-semibold text-cyan-400/80 uppercase tracking-[0.15em] mb-2 flex items-center gap-1.5">
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 2v20" />
+                <path d="M2 12h20" />
+              </svg>
+              Global Control
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleStopAll}
+                className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-amber-500/80 hover:bg-amber-500 transition"
+              >
+                Stop All
+              </button>
+              <button
+                onClick={handleHaltAll}
+                className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-red-600/80 hover:bg-red-600 transition"
+              >
+                Halt All
+              </button>
+            </div>
+          </div>
+
           {/* Robot selector */}
           <div className="px-3 py-2.5 border-b border-slate-700/30">
             <div className="flex items-center justify-between mb-2">
@@ -224,13 +293,10 @@ export default function App() {
             </div>
             <RobotPanel
               selectedRobotIds={selectedRobotIds}
-              allRobotIds={myTeamRobotIds}
               robotData={selectedRobotData}
               onSendCommands={handleSendCommands}
               commandHistory={commandHistory}
               fieldClickPos={fieldClickPos}
-              interfaceCommand={interfaceCommand}
-              onInterfaceCommandChange={setInterfaceCommand}
             />
           </div>
         </div>

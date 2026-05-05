@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import type { RobotState } from "../hooks/useVisionSocket";
 import type {
   SentCommand,
-  InterfaceCommandOptions,
   RobotCommand,
 } from "../hooks/useCommandSocket";
 
@@ -30,13 +29,10 @@ const TASK_OPTIONS = [
 
 interface RobotPanelProps {
   selectedRobotIds: number[];
-  allRobotIds: number[];
   robotData: RobotState | undefined;
   onSendCommands: (robotIds: number[], command: Omit<RobotCommand, "robotId">) => void;
   commandHistory: SentCommand[];
   fieldClickPos: { x: number; y: number } | null;
-  interfaceCommand: InterfaceCommandOptions;
-  onInterfaceCommandChange: (next: InterfaceCommandOptions) => void;
 }
 
 const inputClasses =
@@ -50,13 +46,10 @@ const labelClasses =
 
 export default function RobotPanel({
   selectedRobotIds,
-  allRobotIds,
   robotData,
   onSendCommands,
   commandHistory,
   fieldClickPos,
-  interfaceCommand,
-  onInterfaceCommandChange,
 }: RobotPanelProps) {
   const [state, setState] = useState(1);
   const [task, setTask] = useState(1);
@@ -106,16 +99,6 @@ export default function RobotPanel({
     kickSpeed,
     onSendCommands,
   ]);
-
-  const handleStopAll = useCallback(() => {
-    if (allRobotIds.length === 0) return;
-    onSendCommands(allRobotIds, { state: 2, task: 0 });
-  }, [allRobotIds, onSendCommands]);
-
-  const handleHaltAll = useCallback(() => {
-    if (allRobotIds.length === 0) return;
-    onSendCommands(allRobotIds, { state: 1, task: 0 });
-  }, [allRobotIds, onSendCommands]);
 
   const selectedLabel =
     selectedRobotIds.length === 1
@@ -330,69 +313,6 @@ export default function RobotPanel({
         />
       </div>
 
-      {/* Interface options */}
-      <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/40">
-        <h4 className="text-[10px] font-semibold text-cyan-400/80 uppercase tracking-[0.15em] mb-2">
-          Interface Options
-        </h4>
-        <div className="space-y-2 text-xs">
-          <label className="flex items-center gap-2 text-slate-300">
-            <input
-              type="checkbox"
-              checked={interfaceCommand.enableTestfield}
-              onChange={(e) =>
-                onInterfaceCommandChange({
-                  ...interfaceCommand,
-                  enableTestfield: e.target.checked,
-                })
-              }
-            />
-            Enable Testfield
-          </label>
-          <div className="flex items-center gap-2">
-            <label className="text-slate-400 text-[11px] w-24">Testfield</label>
-            <input
-              type="number"
-              placeholder="0"
-              value={interfaceCommand.testfield}
-              onChange={(e) =>
-                onInterfaceCommandChange({
-                  ...interfaceCommand,
-                  testfield: Number(e.target.value || 0),
-                })
-              }
-              className={inputClasses}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-slate-300">
-            <input
-              type="checkbox"
-              checked={interfaceCommand.ballTracked}
-              onChange={(e) =>
-                onInterfaceCommandChange({
-                  ...interfaceCommand,
-                  ballTracked: e.target.checked,
-                })
-              }
-            />
-            Ball Tracked
-          </label>
-          <label className="flex items-center gap-2 text-slate-300">
-            <input
-              type="checkbox"
-              checked={interfaceCommand.gcData}
-              onChange={(e) =>
-                onInterfaceCommandChange({
-                  ...interfaceCommand,
-                  gcData: e.target.checked,
-                })
-              }
-            />
-            Game Controller Data
-          </label>
-        </div>
-      </div>
-
       {/* Send button */}
       <button
         onClick={handleSend}
@@ -401,21 +321,6 @@ export default function RobotPanel({
         Send Command
       </button>
 
-      {/* Stop/Halt buttons */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={handleStopAll}
-          className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-amber-500/80 hover:bg-amber-500 transition"
-        >
-          Stop All
-        </button>
-        <button
-          onClick={handleHaltAll}
-          className="w-full text-slate-100 font-semibold py-2 rounded-xl text-xs bg-red-600/80 hover:bg-red-600 transition"
-        >
-          Halt All
-        </button>
-      </div>
 
       {/* Command history */}
       {commandHistory.length > 0 && (
