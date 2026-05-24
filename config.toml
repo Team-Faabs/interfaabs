@@ -3,8 +3,28 @@ host = "0.0.0.0"
 port = 8080
 
 [crashpilot]
-# Crashpilot websocket endpoint used for commands and vision/tracked streaming
-ws_url = "ws://127.0.0.1:4096/ws"
+# CrashPilot websocket endpoint used for commands and vision/tracked streaming.
+ws_url = "ws://10.0.64.221:4096/ws"
+reconnect_delay_ms = 2000
+handshake_timeout_ms = 10000
+write_timeout_ms = 2000
 
-# Default source: "vision" or "tracked"
-default_source = "tracked"
+[interface_defaults]
+enable_testfield = false
+testfield = 0
+ball_tracked = true
+gc_data = false
+
+[field]
+# Fallback field geometry used until SSL geometry arrives from the controller.
+length_mm = 9000
+width_mm = 6000
+goal_width_mm = 1000
+goal_depth_mm = 180
+boundary_width_mm = 300
+penalty_area_depth_mm = 1000
+penalty_area_width_mm = 2000
+center_circle_radius_mm = 500
+line_thickness_mm = 10
+max_robot_radius_mm = 90
+ball_radius_mm = 22
