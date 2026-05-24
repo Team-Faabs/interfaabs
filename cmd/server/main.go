@@ -1,75 +1,65 @@
 package main
 
 import (
-	"io/fs"
+	"context"
+	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	root "github.com/technulgy-lgnu/crashpilot-interface"
+	"github.com/technulgy-lgnu/crashpilot-interface/internal/app"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/config"
-	"github.com/technulgy-lgnu/crashpilot-interface/internal/hub"
-	"github.com/technulgy-lgnu/crashpilot-interface/internal/server"
-	"github.com/technulgy-lgnu/crashpilot-interface/internal/vision"
 )
 
 func main() {
-	// Load config
-	cfg, err := config.Load(
-		"config.toml",
-		"/etc/crashpilot/config.toml",
-	)
+	cfgPath := "config.toml"
+	if v := os.Getenv("CRASHPILOT_CONFIG"); v != "" {
+		cfgPath = v
+	}
+
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	log.Printf("config loaded: server=%s, vision=%s, tracked=%s, source=%s",
-		cfg.Server.Addr(), cfg.Vision.MulticastAddr, cfg.Vision.TrackedAddr, cfg.Vision.DefaultSource)
+	log.Printf("config loaded: server=%s:%d, ws=%s",
+		cfg.Server.Host, cfg.Server.Port, cfg.CrashPilot.WSURL)
 
-	// Create hub
-	h := hub.New(cfg.Vision.DefaultSource)
-	defer h.Stop()
-
-	// Start vision receiver
-	visionRx := vision.NewReceiver(cfg.Vision.MulticastAddr, cfg.Vision.MulticastIface, h)
-	go func() {
-		if err := visionRx.Run(); err != nil {
-			log.Printf("vision receiver error: %v", err)
-		}
-	}()
-
-	// Start tracked receiver
-	trackedRx := vision.NewTrackedReceiver(cfg.Vision.TrackedAddr, cfg.Vision.MulticastIface, h)
-	go func() {
-		if err := trackedRx.Run(); err != nil {
-			log.Printf("tracked receiver error: %v", err)
-		}
-	}()
-
-	// Prepare embedded frontend filesystem
-	frontendFS, err := fs.Sub(root.FrontendDist, "frontend/dist")
+	svc, err := app.New(cfg)
 	if err != nil {
-		log.Fatalf("failed to create frontend sub-filesystem: %v", err)
+		log.Fatalf("failed to create service: %v", err)
 	}
 
-	// Create and start server
-	srv := server.New(cfg, h, frontendFS)
+	srv := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler: svc.Handler(),
+	}
 
-	// Graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go svc.RunController(ctx)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-quit
 		log.Println("shutting down...")
-		if err := srv.Shutdown(); err != nil {
+		cancel()
+		shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Printf("server shutdown error: %v", err)
 		}
 	}()
 
-	if err := srv.Start(); err != nil {
+	log.Printf("listening on %s", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
 }
-
