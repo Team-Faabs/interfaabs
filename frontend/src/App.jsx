@@ -102,6 +102,8 @@ export default function App() {
   const [selectedRobotIds, setSelectedRobotIds] = useState([])
   const [command, setCommand] = useState(INITIAL_COMMAND)
   const [optionsDraft, setOptionsDraft] = useState(EMPTY_SNAPSHOT.interfaceOptions)
+  const [flipX, setFlipX] = useLocalStorage('cp:flipX', false)
+  const [flipY, setFlipY] = useLocalStorage('cp:flipY', false)
   const socketRef = useRef(null)
   const retryTimerRef = useRef(null)
 
@@ -236,49 +238,39 @@ export default function App() {
     <div className="app-shell">
       <div className="app-backdrop" />
       <main className="dashboard">
-        <section className="hero-panel card">
-          <div>
-            <p className="eyebrow">CrashPilot Interface</p>
-            <h1>Robot control room with live field awareness</h1>
-            <p className="hero-copy">
-              Monitor vision, game controller data, and CrashPilot commands in one place. Select one robot or a whole set,
-              then push commands back to the controller.
-            </p>
-          </div>
-          <div className="status-strip">
-            <StatusPill label="Browser WS" value={socketState} tone={socketState === 'connected' ? 'good' : 'warn'} />
-            <StatusPill
-              label="Controller"
-              value={snapshot.controller.connected ? 'connected' : 'offline'}
-              tone={snapshot.controller.connected ? 'good' : 'danger'}
-            />
-            <StatusPill label="Vision" value={prettySource(snapshot.vision.source)} tone="neutral" />
-            <StatusPill label="Robots" value={String(snapshot.vision.robots.length)} tone="neutral" />
-            <StatusPill label="Balls" value={String(snapshot.vision.balls.length)} tone="neutral" />
-          </div>
-          <div className="hero-actions">
-            <button className="action danger large" onClick={() => quickCommand('STATE_HALT')}>
-              Halt All
-            </button>
-            <button className="action warn large" onClick={() => quickCommand('STATE_STOP')}>
-              Stop All
-            </button>
-            <div className="inline-meta">
-              <span>CrashPilot WS: {snapshot.controller.url || 'not configured'}</span>
-              <span>Last event: {snapshot.debug.lastEvent || 'waiting'}</span>
-            </div>
-          </div>
-        </section>
-
         <section className="field-panel card">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">Live Field</p>
-              <h2>Robots, balls, and command intents</h2>
+          <div className="section-head compact">
+            <div className="title-block">
+              <span className="brand-dot" />
+              <h2>CrashPilot</h2>
+              <span className="mini-stats">
+                Frame #{snapshot.vision.frameNumber || '-'} · {formatTimestamp(snapshot.vision.updatedAt || snapshot.updatedAt)}
+              </span>
             </div>
-            <div className="mini-stats">
-              <span>Frame #{snapshot.vision.frameNumber || '-'}</span>
-              <span>{formatTimestamp(snapshot.vision.updatedAt || snapshot.updatedAt)}</span>
+            <div className="field-header-tools">
+              <div className="flip-toggles">
+                <button
+                  className={`flip-btn ${flipX ? 'active' : ''}`}
+                  onClick={() => setFlipX((v) => !v)}
+                  title="Mirror the field along the X axis"
+                >
+                  Flip X
+                </button>
+                <button
+                  className={`flip-btn ${flipY ? 'active' : ''}`}
+                  onClick={() => setFlipY((v) => !v)}
+                  title="Mirror the field along the Y axis"
+                >
+                  Flip Y
+                </button>
+              </div>
+              <div className="field-legend">
+                <LegendChip tone="blue" label="Blue" />
+                <LegendChip tone="yellow" label="Yellow" />
+                <LegendChip tone="accent" label="Ball" />
+                <LegendChip tone="violet" label="Target" />
+                <LegendChip tone="mint" label="Kick" />
+              </div>
             </div>
           </div>
           <FieldView
@@ -287,55 +279,51 @@ export default function App() {
             robots={commandTargets}
             kickedBall={snapshot.vision.kickedBall}
             selectedTarget={{ x: Number(command.positionX), y: Number(command.positionY) }}
+            selectedRobotIds={selectedRobotIds}
+            flipX={flipX}
+            flipY={flipY}
             onPickPosition={pickFieldPosition}
+            onToggleRobot={toggleRobot}
           />
-          <div className="field-legend">
-            <LegendChip tone="blue" label="Blue robots" />
-            <LegendChip tone="yellow" label="Yellow robots" />
-            <LegendChip tone="accent" label="Ball" />
-            <LegendChip tone="violet" label="CrashPilot target" />
-            <LegendChip tone="mint" label="Kick direction" />
-          </div>
-          <p className="field-hint muted">Click anywhere on the field to fill the target position inputs.</p>
+          <p className="field-hint muted">Click the field to set the target position · click a robot to select it.</p>
         </section>
 
         <section className="control-panel card">
           <div className="section-head compact">
-            <div>
-              <p className="eyebrow">Command Builder</p>
-              <h2>Send to one or many robots</h2>
+            <h2>Command Builder</h2>
+            <div className="selection-summary">
+              {selectedRobotIds.length > 0
+                ? `${selectedRobotIds.length} selected`
+                : `${snapshot.knownRobotIds.length} (all)`}
             </div>
-            <div className="selection-summary">{selectedRobots.length} target robot(s)</div>
           </div>
+
           <div className="robot-selector">
-            {snapshot.knownRobotIds.length === 0 ? <p className="muted">Waiting for robot ids from vision or CrashPilot.</p> : null}
+            {snapshot.knownRobotIds.length === 0 ? (
+              <p className="muted">Waiting for robot ids.</p>
+            ) : null}
             {snapshot.knownRobotIds.map((robotId) => (
               <button
                 key={robotId}
                 className={`robot-chip ${selectedRobotIds.includes(robotId) ? 'selected' : ''}`}
                 onClick={() => toggleRobot(robotId)}
               >
-                Robot {robotId}
+                {robotId}
               </button>
             ))}
           </div>
-          <div className="toolbar-row">
-            <button className="ghost" onClick={selectAllVisible}>
-              Select All
-            </button>
-            <button className="ghost" onClick={clearSelection}>
-              Clear
-            </button>
-            <span className="muted">If none are selected, commands target all known robots.</span>
+          <div className="toolbar-row tight">
+            <button className="ghost small" onClick={selectAllVisible}>All</button>
+            <button className="ghost small" onClick={clearSelection}>Clear</button>
+            <span className="muted small">No selection = all robots</span>
           </div>
+
           <div className="form-grid">
             <label>
               <span>State</span>
               <select value={command.state} onChange={(event) => setCommand((current) => ({ ...current, state: event.target.value }))}>
                 {STATE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {prettyEnum(option)}
-                  </option>
+                  <option key={option} value={option}>{prettyEnum(option)}</option>
                 ))}
               </select>
             </label>
@@ -343,18 +331,16 @@ export default function App() {
               <span>Task</span>
               <select value={command.task} onChange={(event) => setCommand((current) => ({ ...current, task: event.target.value }))}>
                 {TASK_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {prettyEnum(option)}
-                  </option>
+                  <option key={option} value={option}>{prettyEnum(option)}</option>
                 ))}
               </select>
             </label>
             <label>
-              <span>Target X (mm)</span>
+              <span>X (mm)</span>
               <input type="number" value={command.positionX} onChange={(event) => setCommand((current) => ({ ...current, positionX: Number(event.target.value) }))} />
             </label>
             <label>
-              <span>Target Y (mm)</span>
+              <span>Y (mm)</span>
               <input type="number" value={command.positionY} onChange={(event) => setCommand((current) => ({ ...current, positionY: Number(event.target.value) }))} />
             </label>
             <label>
@@ -362,62 +348,66 @@ export default function App() {
               <input type="number" value={command.speed} onChange={(event) => setCommand((current) => ({ ...current, speed: event.target.value }))} />
             </label>
             <label>
-              <span>Orientation</span>
-              <input
-                type="number"
-                value={command.orientation}
-                onChange={(event) => setCommand((current) => ({ ...current, orientation: event.target.value }))}
-              />
+              <span>Orient. (°)</span>
+              <input type="number" value={command.orientation} onChange={(event) => setCommand((current) => ({ ...current, orientation: event.target.value }))} />
             </label>
             <label>
-              <span>Kick Orientation</span>
-              <input
-                type="number"
-                value={command.kickOrientation}
-                onChange={(event) => setCommand((current) => ({ ...current, kickOrientation: event.target.value }))}
-              />
+              <span>Kick orient. (°)</span>
+              <input type="number" value={command.kickOrientation} onChange={(event) => setCommand((current) => ({ ...current, kickOrientation: event.target.value }))} />
             </label>
             <label>
-              <span>Kick Speed</span>
+              <span>Kick speed</span>
               <input type="number" value={command.kickSpeed} onChange={(event) => setCommand((current) => ({ ...current, kickSpeed: event.target.value }))} />
             </label>
           </div>
-          <div className="toolbar-row spread">
-            <div className="command-preview">Preview: {prettyEnum(command.state)} / {prettyEnum(command.task)}</div>
-            <button className="action primary" onClick={sendCommand}>
-              Send Command
-            </button>
+
+          <div className="preview-row">
+            <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}</span>
+            <button className="action primary" onClick={sendCommand}>Send</button>
           </div>
+        </section>
+
+        <section className="topbar-panel card">
+          <div className="topbar-actions">
+            <button className="action danger" onClick={() => quickCommand('STATE_HALT')}>Halt All</button>
+            <button className="action warn" onClick={() => quickCommand('STATE_STOP')}>Stop All</button>
+          </div>
+          <div className="status-strip">
+            <StatusPill label="WS" value={socketState} tone={socketState === 'connected' ? 'good' : 'warn'} />
+            <StatusPill label="Controller" value={snapshot.controller.connected ? 'online' : 'offline'} tone={snapshot.controller.connected ? 'good' : 'danger'} />
+            <StatusPill label="Vision" value={prettySource(snapshot.vision.source)} tone="neutral" />
+            <StatusPill label="Robots" value={String(snapshot.vision.robots.length)} tone="neutral" />
+            <StatusPill label="Balls" value={String(snapshot.vision.balls.length)} tone="neutral" />
+          </div>
+          {uiError ? <span className="error-pill">{uiError}</span> : null}
         </section>
 
         <section className="options-panel card">
           <div className="section-head compact">
-            <div>
-              <p className="eyebrow">Global Options</p>
-              <h2>Controller-wide switches</h2>
-            </div>
+            <h2>Global Options</h2>
+            <button className="action secondary small" onClick={submitOptions}>Apply</button>
           </div>
           <div className="toggle-grid">
             <ToggleCard
-              label="Enable testfield"
-              description="Enable the quadrant test field mode inside CrashPilot."
+              label="Testfield"
+              description="Quadrant test mode."
               checked={optionsDraft.enableTestfield}
               onChange={(checked) => setOptionsDraft((current) => ({ ...current, enableTestfield: checked }))}
             />
             <ToggleCard
               label="Track balls"
-              description="Use tracked ball data instead of raw ball detections."
+              description="Use tracked instead of raw balls."
               checked={optionsDraft.ballTracked}
               onChange={(checked) => setOptionsDraft((current) => ({ ...current, ballTracked: checked }))}
             />
             <ToggleCard
-              label="Use GC data"
-              description="Allow CrashPilot to react to game controller messages."
+              label="GC data"
+              description="React to game controller messages."
               checked={optionsDraft.gcData}
               onChange={(checked) => setOptionsDraft((current) => ({ ...current, gcData: checked }))}
             />
             <label className="testfield-card">
-              <span>Testfield quadrant</span>
+              <span>Quadrant</span>
               <select value={optionsDraft.testfield} onChange={(event) => setOptionsDraft((current) => ({ ...current, testfield: Number(event.target.value) }))}>
                 <option value={0}>0: -x +y</option>
                 <option value={1}>1: +x +y</option>
@@ -426,75 +416,57 @@ export default function App() {
               </select>
             </label>
           </div>
-          <div className="toolbar-row spread">
-            <span className="muted">Options are encoded as `InterfaceCommand_CP` and sent to the controller.</span>
-            <button className="action secondary" onClick={submitOptions}>
-              Apply Options
-            </button>
-          </div>
         </section>
 
-        <section className="command-feed card">
-          <div className="section-head compact">
-            <div>
-              <p className="eyebrow">CrashPilot Feed</p>
-              <h2>Per-robot command stream</h2>
-            </div>
-          </div>
-          <div className="feed-list">
-            {snapshot.robotCommands.length === 0 ? <p className="muted">No controller commands received yet.</p> : null}
-            {snapshot.robotCommands.map((item) => (
-              <article key={`${item.robotId}-${item.packetId}-${item.receivedAt}`} className="feed-item">
-                <div className="feed-topline">
-                  <strong>Robot {item.robotId}</strong>
-                  <span>{item.commandLabel}</span>
-                </div>
-                <div className="feed-grid">
-                  <span>State: {prettyEnum(item.command.state)}</span>
-                  <span>Task: {prettyEnum(item.command.task)}</span>
-                  <span>Packet: {item.packetId}</span>
-                  <span>Age: {item.ageMs} ms</span>
-                  <span>Target: {item.command.position ? `${Math.round(item.command.position.x)}, ${Math.round(item.command.position.y)}` : 'none'}</span>
-                  <span>Kick: {item.command.kickOrientation ?? '-'} / {item.command.kickSpeed ?? '-'}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="info-panel card">
+        <section className="bottom-panel card">
           <div className="split-panels">
-            <div>
-              <p className="eyebrow">Referee</p>
-              <h2>Game state</h2>
-              {snapshot.referee ? (
-                <div className="referee-grid">
-                  <InfoRow label="Stage" value={prettyEnum(snapshot.referee.stage)} />
-                  <InfoRow label="Command" value={prettyEnum(snapshot.referee.command)} />
-                  <InfoRow label="Next" value={prettyEnum(snapshot.referee.nextCommand)} />
-                  <InfoRow label="Blue" value={`${snapshot.referee.blue.name || 'Blue'} ${snapshot.referee.blue.score}`} />
-                  <InfoRow label="Yellow" value={`${snapshot.referee.yellow.name || 'Yellow'} ${snapshot.referee.yellow.score}`} />
-                  <InfoRow label="Status" value={snapshot.referee.statusMessage || 'No status message'} />
-                </div>
-              ) : (
-                <p className="muted">No game controller packet received yet.</p>
-              )}
+            <div className="split-col">
+              <div className="section-head compact">
+                <h2>CrashPilot Feed</h2>
+              </div>
+              <div className="feed-list">
+                {snapshot.robotCommands.length === 0 ? <p className="muted">No commands yet.</p> : null}
+                {snapshot.robotCommands.map((item) => (
+                  <article key={`${item.robotId}-${item.packetId}-${item.receivedAt}`} className="feed-item">
+                    <div className="feed-topline">
+                      <strong>Robot {item.robotId}</strong>
+                      <span>{item.commandLabel}</span>
+                    </div>
+                    <div className="feed-grid">
+                      <span>State: {prettyEnum(item.command.state)}</span>
+                      <span>Task: {prettyEnum(item.command.task)}</span>
+                      <span>Pkt: {item.packetId}</span>
+                      <span>Age: {item.ageMs}ms</span>
+                      <span>Target: {item.command.position ? `${Math.round(item.command.position.x)}, ${Math.round(item.command.position.y)}` : '—'}</span>
+                      <span>Kick: {item.command.kickOrientation ?? '—'} / {item.command.kickSpeed ?? '—'}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
-            <div>
-              <p className="eyebrow">Debug</p>
-              <h2>Transport and stream stats</h2>
+            <div className="split-col">
+              <div className="section-head compact">
+                <h2>Referee & Debug</h2>
+              </div>
               <div className="referee-grid">
-                <InfoRow label="Packets in" value={snapshot.debug.packetsReceived} />
-                <InfoRow label="Packets out" value={snapshot.debug.packetsSent} />
-                <InfoRow label="Raw frames" value={snapshot.debug.rawFrames} />
-                <InfoRow label="Tracked frames" value={snapshot.debug.trackedFrames} />
-                <InfoRow label="Command frames" value={snapshot.debug.commandFrames} />
-                <InfoRow label="Last inbound" value={formatTimestamp(snapshot.debug.lastInboundAt)} />
-                <InfoRow label="Last outbound" value={formatTimestamp(snapshot.debug.lastOutboundAt)} />
-                <InfoRow label="Inbound bytes" value={snapshot.debug.lastInboundBytes} />
-                <InfoRow label="Outbound bytes" value={snapshot.debug.lastOutboundBytes} />
-                <InfoRow label="Last command" value={snapshot.debug.lastCommand || 'none'} />
-                <InfoRow label="Error" value={uiError || snapshot.debug.lastError || snapshot.controller.lastError || 'none'} />
+                {snapshot.referee ? (
+                  <>
+                    <InfoRow label="Stage" value={prettyEnum(snapshot.referee.stage)} />
+                    <InfoRow label="Command" value={prettyEnum(snapshot.referee.command)} />
+                    <InfoRow label="Next" value={prettyEnum(snapshot.referee.nextCommand)} />
+                    <InfoRow label="Blue" value={`${snapshot.referee.blue.name || 'Blue'} ${snapshot.referee.blue.score}`} />
+                    <InfoRow label="Yellow" value={`${snapshot.referee.yellow.name || 'Yellow'} ${snapshot.referee.yellow.score}`} />
+                    <InfoRow label="Status" value={snapshot.referee.statusMessage || '—'} />
+                  </>
+                ) : (
+                  <p className="muted">No GC packet yet.</p>
+                )}
+                <InfoRow label="Pkts in/out" value={`${snapshot.debug.packetsReceived} / ${snapshot.debug.packetsSent}`} />
+                <InfoRow label="Raw / Trk frames" value={`${snapshot.debug.rawFrames} / ${snapshot.debug.trackedFrames}`} />
+                <InfoRow label="Last in" value={formatTimestamp(snapshot.debug.lastInboundAt)} />
+                <InfoRow label="Last out" value={formatTimestamp(snapshot.debug.lastOutboundAt)} />
+                <InfoRow label="Last command" value={snapshot.debug.lastCommand || '—'} />
+                <InfoRow label="Error" value={snapshot.debug.lastError || snapshot.controller.lastError || '—'} />
               </div>
             </div>
           </div>
@@ -504,8 +476,8 @@ export default function App() {
   )
 }
 
-function FieldView({ field, balls, robots, kickedBall, selectedTarget, onPickPosition }) {
-  const padding = 520
+function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedRobotIds, flipX, flipY, onPickPosition, onToggleRobot }) {
+  const padding = 760
   const width = field.lengthMm + padding * 2
   const height = field.widthMm + padding * 2
   const viewBox = `${-field.lengthMm / 2 - padding} ${-field.widthMm / 2 - padding} ${width} ${height}`
@@ -513,6 +485,12 @@ function FieldView({ field, balls, robots, kickedBall, selectedTarget, onPickPos
   const goalDepth = field.goalDepthMm
   const robotRadius = Math.max(field.maxRobotRadiusMm || 90, 85)
   const ballRadius = Math.max(field.ballRadiusMm || 22, 22)
+  const halfL = field.lengthMm / 2
+  const halfW = field.widthMm / 2
+  const labelOffset = 280
+  const tickLabelOffset = 460
+  const sx = flipX ? -1 : 1
+  const sy = flipY ? -1 : 1
 
   function handleFieldClick(event) {
     const svg = event.currentTarget
@@ -520,8 +498,10 @@ function FieldView({ field, balls, robots, kickedBall, selectedTarget, onPickPos
     point.x = event.clientX
     point.y = event.clientY
     const transformed = point.matrixTransform(svg.getScreenCTM().inverse())
-    const clampedX = clamp(transformed.x, -field.lengthMm / 2, field.lengthMm / 2)
-    const clampedY = clamp(transformed.y, -field.widthMm / 2, field.widthMm / 2)
+    const fieldX = transformed.x * sx
+    const fieldY = transformed.y * sy
+    const clampedX = clamp(fieldX, -halfL, halfL)
+    const clampedY = clamp(fieldY, -halfW, halfW)
     onPickPosition({ x: clampedX, y: clampedY })
   }
 
@@ -536,72 +516,123 @@ function FieldView({ field, balls, robots, kickedBall, selectedTarget, onPickPos
             <path d="M 0 0 L 16 8 L 0 16 z" fill="rgba(107, 255, 214, 0.95)" />
           </marker>
         </defs>
-        <rect x={-field.lengthMm / 2 - field.boundaryWidthMm} y={-field.widthMm / 2 - field.boundaryWidthMm} width={field.lengthMm + field.boundaryWidthMm * 2} height={field.widthMm + field.boundaryWidthMm * 2} className="field-boundary" rx="120" />
-        <rect x={-field.lengthMm / 2} y={-field.widthMm / 2} width={field.lengthMm} height={field.widthMm} className="field-outline" rx="40" />
-        <line x1={0} y1={-field.widthMm / 2} x2={0} y2={field.widthMm / 2} className="field-line" />
-        <circle cx={0} cy={0} r={field.centerCircleMm} className="field-line" />
-        <rect x={-field.lengthMm / 2} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
-        <rect x={penaltyX} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
-        <rect x={-field.lengthMm / 2 - goalDepth} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box left" />
-        <rect x={field.lengthMm / 2} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box right" />
 
-        {balls.map((ball, index) => (
-          <g key={`ball-${index}`}>
-            <circle cx={ball.x} cy={ball.y} r={ballRadius * 1.8} className="ball-glow" />
-            <circle cx={ball.x} cy={ball.y} r={ballRadius} className="ball-dot" />
-          </g>
-        ))}
+        <g transform={`scale(${sx} ${sy})`}>
+          <rect
+            x={-halfL - field.boundaryWidthMm}
+            y={-halfW - field.boundaryWidthMm}
+            width={field.lengthMm + field.boundaryWidthMm * 2}
+            height={field.widthMm + field.boundaryWidthMm * 2}
+            className="field-boundary"
+            rx="120"
+          />
+          <rect x={-halfL} y={-halfW} width={field.lengthMm} height={field.widthMm} className="field-outline" rx="20" />
+          <line x1={0} y1={-halfW} x2={0} y2={halfW} className="field-line" />
+          <circle cx={0} cy={0} r={field.centerCircleMm} className="field-line" />
+          <circle cx={0} cy={0} r={20} className="field-dot" />
+          <rect x={-halfL} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
+          <rect x={penaltyX} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
+          <rect x={-halfL - goalDepth} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box left" />
+          <rect x={halfL} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box right" />
 
-        {kickedBall ? (
-          <line x1={kickedBall.x} y1={kickedBall.y} x2={kickedBall.stopX || kickedBall.x} y2={kickedBall.stopY || kickedBall.y} className="kicked-ball-line" />
-        ) : null}
-
-        {selectedTarget ? (
-          <g>
-            <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.9} className="picked-target-ring" />
-            <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.28} className="picked-target-dot" />
-          </g>
-        ) : null}
-
-        {robots.map((robot) => {
-          const radius = robotRadius
-          const headingX = robot.x + Math.cos(robot.orientation || 0) * radius * 1.5
-          const headingY = robot.y + Math.sin(robot.orientation || 0) * radius * 1.5
-          const teamClass = robot.team === 'blue' ? 'robot blue' : robot.team === 'yellow' ? 'robot yellow' : 'robot neutral'
-          const command = robot.cpCommand?.command
-          const self = robot.cpCommand?.self
-          const originX = self?.x ?? robot.x
-          const originY = self?.y ?? robot.y
-          const kickArrow = command?.kickOrientation != null
-          const kickLength = 320
-          const kickAngle = kickArrow ? degreesToRadians(command.kickOrientation) : null
-          return (
-            <g key={`${robot.team}-${robot.id}-${robot.x}-${robot.y}`}>
-              {command?.position ? (
-                <line x1={originX} y1={originY} x2={command.position.x} y2={command.position.y} className="command-line" markerEnd="url(#target-arrow)" />
-              ) : null}
-              {kickArrow ? (
-                <line
-                  x1={originX}
-                  y1={originY}
-                  x2={originX + Math.cos(kickAngle) * kickLength}
-                  y2={originY + Math.sin(kickAngle) * kickLength}
-                  className="kick-line"
-                  markerEnd="url(#kick-arrow)"
-                />
-              ) : null}
-              <circle cx={robot.x} cy={robot.y} r={radius * 1.35} className={`${teamClass} glow`} />
-              <circle cx={robot.x} cy={robot.y} r={radius} className={teamClass} />
-              <line x1={robot.x} y1={robot.y} x2={headingX} y2={headingY} className="robot-heading" />
-              <text x={robot.x} y={robot.y + 6} className="robot-label">
-                {robot.id}
-              </text>
+          {balls.map((ball, index) => (
+            <g key={`ball-${index}`}>
+              <circle cx={ball.x} cy={ball.y} r={ballRadius * 2} className="ball-glow" />
+              <circle cx={ball.x} cy={ball.y} r={ballRadius} className="ball-dot" />
             </g>
-          )
-        })}
+          ))}
+
+          {kickedBall ? (
+            <line x1={kickedBall.x} y1={kickedBall.y} x2={kickedBall.stopX || kickedBall.x} y2={kickedBall.stopY || kickedBall.y} className="kicked-ball-line" />
+          ) : null}
+
+          {selectedTarget ? (
+            <g>
+              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.9} className="picked-target-ring" />
+              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.28} className="picked-target-dot" />
+            </g>
+          ) : null}
+
+          {robots.map((robot) => {
+            const radius = robotRadius
+            const isSelected = selectedRobotIds.includes(robot.id)
+            const teamClass = robot.team === 'blue' ? 'robot blue' : robot.team === 'yellow' ? 'robot yellow' : 'robot neutral'
+            const command = robot.cpCommand?.command
+            const self = robot.cpCommand?.self
+            const originX = self?.x ?? robot.x
+            const originY = self?.y ?? robot.y
+            const kickArrow = command?.kickOrientation != null
+            const kickLength = 320
+            const kickAngle = kickArrow ? degreesToRadians(command.kickOrientation) : null
+            const orientation = robot.orientation || 0
+            const bodyPath = robotBodyPath(radius, orientation)
+            const labelTransform = `scale(${sx} ${sy})`
+            return (
+              <g key={`${robot.team}-${robot.id}-${robot.x}-${robot.y}`} className="robot-group" onClick={(event) => { event.stopPropagation(); onToggleRobot(robot.id) }}>
+                {command?.position ? (
+                  <line x1={originX} y1={originY} x2={command.position.x} y2={command.position.y} className="command-line" markerEnd="url(#target-arrow)" />
+                ) : null}
+                {kickArrow ? (
+                  <line
+                    x1={originX}
+                    y1={originY}
+                    x2={originX + Math.cos(kickAngle) * kickLength}
+                    y2={originY + Math.sin(kickAngle) * kickLength}
+                    className="kick-line"
+                    markerEnd="url(#kick-arrow)"
+                  />
+                ) : null}
+                <g transform={`translate(${robot.x} ${robot.y})`}>
+                  {isSelected ? (
+                    <circle cx={0} cy={0} r={radius * 1.55} className="robot-select-ring" />
+                  ) : null}
+                  <path d={bodyPath} className={teamClass} />
+                  <text x={0} y={28} className="robot-label" transform={labelTransform}>{robot.id}</text>
+                </g>
+              </g>
+            )
+          })}
+        </g>
+
+        {/* axis labels (outside flipped group so text reads correctly; positions follow flips) */}
+        <g className="axis-labels">
+          <text x={sx * (halfL + tickLabelOffset)} y={0} className="axis-label">+X</text>
+          <text x={-sx * (halfL + tickLabelOffset)} y={0} className="axis-label">−X</text>
+          <text x={0} y={sy * (halfW + tickLabelOffset)} className="axis-label">+Y</text>
+          <text x={0} y={-sy * (halfW + tickLabelOffset) + 20} className="axis-label">−Y</text>
+        </g>
+
+        {/* angle ticks: 0° → +X, 90° → +Y, 180° → −X, 270° → −Y */}
+        <g className="angle-labels">
+          <text x={sx * (halfL + labelOffset)} y={120} className="angle-label">0°</text>
+          <text x={-80} y={sy * (halfW + labelOffset)} className="angle-label">90°</text>
+          <text x={-sx * (halfL + labelOffset)} y={120} className="angle-label">180°</text>
+          <text x={-80} y={-sy * (halfW + labelOffset) + 20} className="angle-label">270°</text>
+        </g>
+
+        {/* compass in lower-left, fixed orientation */}
+        <g className="compass" transform={`translate(${-halfL - 540}, ${halfW + 360})`}>
+          <circle cx={0} cy={0} r={140} className="compass-bg" />
+          <line x1={-110} y1={0} x2={sx * 110} y2={0} className="compass-axis" markerEnd="url(#target-arrow)" />
+          <line x1={0} y1={-110} x2={0} y2={sy * 110} className="compass-axis" markerEnd="url(#target-arrow)" />
+          <text x={sx * 150} y={20} className="compass-text">X</text>
+          <text x={-10} y={sy * 180} className="compass-text">Y</text>
+        </g>
       </svg>
     </div>
   )
+}
+
+function robotBodyPath(radius, orientation) {
+  // SSL-style robot body drawn around (0,0): circle with a flat face on the kicker side.
+  const notch = 0.55 // half-angle of the flat face in radians
+  const a1 = orientation + notch
+  const a2 = orientation - notch
+  const x1 = Math.cos(a1) * radius
+  const y1 = Math.sin(a1) * radius
+  const x2 = Math.cos(a2) * radius
+  const y2 = Math.sin(a2) * radius
+  return `M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2} Z`
 }
 
 function ToggleCard({ label, description, checked, onChange }) {
@@ -689,13 +720,13 @@ function prettyEnum(value) {
 }
 
 function prettySource(source) {
-  if (source === 'vision_raw') return 'Raw Vision'
-  if (source === 'vision_tracked') return 'Tracked Vision'
+  if (source === 'vision_raw') return 'Raw'
+  if (source === 'vision_tracked') return 'Tracked'
   return prettyEnum(source)
 }
 
 function formatTimestamp(value) {
-  if (!value) return 'No timestamp'
+  if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleTimeString()
@@ -707,4 +738,20 @@ function degreesToRadians(value) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
+}
+
+function useLocalStorage(key, initial) {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = window.localStorage.getItem(key)
+      if (stored != null) return JSON.parse(stored)
+    } catch {}
+    return initial
+  })
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    } catch {}
+  }, [key, value])
+  return [value, setValue]
 }
