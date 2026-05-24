@@ -107,9 +107,10 @@ export default function App() {
   const socketRef = useRef(null)
   const retryTimerRef = useRef(null)
 
+  const { enableTestfield, testfield, ballTracked, gcData } = snapshot.interfaceOptions
   useEffect(() => {
-    setOptionsDraft(snapshot.interfaceOptions)
-  }, [snapshot.interfaceOptions])
+    setOptionsDraft({ enableTestfield, testfield, ballTracked, gcData })
+  }, [enableTestfield, testfield, ballTracked, gcData])
 
   useEffect(() => {
     const connect = () => {
@@ -282,6 +283,7 @@ export default function App() {
             selectedRobotIds={selectedRobotIds}
             flipX={flipX}
             flipY={flipY}
+            testfield={snapshot.interfaceOptions.enableTestfield ? snapshot.interfaceOptions.testfield : null}
             onPickPosition={pickFieldPosition}
             onToggleRobot={toggleRobot}
           />
@@ -476,7 +478,7 @@ export default function App() {
   )
 }
 
-function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedRobotIds, flipX, flipY, onPickPosition, onToggleRobot }) {
+function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedRobotIds, flipX, flipY, testfield, onPickPosition, onToggleRobot }) {
   const padding = 760
   const width = field.lengthMm + padding * 2
   const height = field.widthMm + padding * 2
@@ -534,6 +536,26 @@ function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedR
           <rect x={penaltyX} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
           <rect x={-halfL - goalDepth} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box left" />
           <rect x={halfL} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box right" />
+
+          {testfield != null ? (() => {
+            const quadrants = {
+              0: { x: -halfL, y: 0,       label: '−X +Y' },
+              1: { x: 0,      y: 0,       label: '+X +Y' },
+              2: { x: 0,      y: -halfW,  label: '+X −Y' },
+              3: { x: -halfL, y: -halfW,  label: '−X −Y' },
+            }
+            const q = quadrants[testfield]
+            if (!q) return null
+            return (
+              <g className="testfield-overlay">
+                <rect x={q.x} y={q.y} width={halfL} height={halfW} className="testfield-rect" />
+                <g transform={`translate(${q.x + halfL / 2} ${q.y + halfW / 2}) scale(${sx} ${sy})`}>
+                  <text x={0} y={-40} className="testfield-label">TESTFIELD</text>
+                  <text x={0} y={140} className="testfield-sublabel">Q{testfield} · {q.label}</text>
+                </g>
+              </g>
+            )
+          })() : null}
 
           {balls.map((ball, index) => (
             <g key={`ball-${index}`}>
