@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	webassets "github.com/technulgy-lgnu/crashpilot-interface"
 	"github.com/technulgy-lgnu/crashpilot-interface/gen/proto"
 	"github.com/technulgy-lgnu/crashpilot-interface/internal/config"
-	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -553,13 +553,18 @@ func mapTrackedVision(tracked *crashpilot_interface.TrackerWrapperPacket, field 
 	for _, robot := range frame.GetRobots() {
 		team := trackedTeamLabel(robot.GetRobotId())
 		robotID := uint32(0)
-		if robot.GetRobotId() != nil {
+		idKnown := robot.GetRobotId() != nil
+		if idKnown {
 			robotID = robot.GetRobotId().GetId()
 		}
 		vx, vy := 0.0, 0.0
 		if robot.GetVel() != nil {
 			vx = float64(robot.GetVel().GetX()) * 1000
 			vy = float64(robot.GetVel().GetY()) * 1000
+		}
+		robotTags := []string{}
+		if !idKnown {
+			robotTags = append(robotTags, "id_unknown")
 		}
 		robots = append(robots, Robot{
 			ID:          robotID,
@@ -571,6 +576,7 @@ func mapTrackedVision(tracked *crashpilot_interface.TrackerWrapperPacket, field 
 			VY:          vy,
 			Visibility:  float64(robot.GetVisibility()),
 			Source:      "vision_tracked",
+			Tags:        robotTags,
 		})
 	}
 
@@ -882,14 +888,13 @@ func mapCPTrackedRobot(robot *crashpilot_interface.CP_TrackedRobot, team string)
 func collectKnownRobotIDs(robots []Robot, commands []RobotCommand) []uint32 {
 	unique := make(map[uint32]struct{})
 	for _, robot := range robots {
-		if robot.ID != 0 {
-			unique[robot.ID] = struct{}{}
+		if robot.ID == 0 && hasTag(robot.Tags, "id_unknown") {
+			continue
 		}
+		unique[robot.ID] = struct{}{}
 	}
 	for _, command := range commands {
-		if command.RobotID != 0 {
-			unique[command.RobotID] = struct{}{}
-		}
+		unique[command.RobotID] = struct{}{}
 	}
 	ids := make([]uint32, 0, len(unique))
 	for id := range unique {
@@ -940,9 +945,7 @@ func normalizeCPVector(x, y int32) (float64, float64) {
 func uniqueRobotIDs(ids []uint32) []uint32 {
 	set := make(map[uint32]struct{})
 	for _, id := range ids {
-		if id != 0 {
-			set[id] = struct{}{}
-		}
+		set[id] = struct{}{}
 	}
 	unique := make([]uint32, 0, len(set))
 	for id := range set {
@@ -950,6 +953,15 @@ func uniqueRobotIDs(ids []uint32) []uint32 {
 	}
 	sort.Slice(unique, func(i, j int) bool { return unique[i] < unique[j] })
 	return unique
+}
+
+func hasTag(tags []string, tag string) bool {
+	for _, value := range tags {
+		if value == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) bool {
