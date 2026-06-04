@@ -22,6 +22,9 @@ const TASK_OPTIONS = [
   'STATE_FREEKICK',
 ]
 
+// Tasks that actually drive to a target position — only these get a target arrow on the field.
+const POSITION_TASKS = new Set(['TASK_POS', 'TASK_DRIBBLE', 'TASK_PosBall'])
+
 const INITIAL_COMMAND = {
   state: 'STATE_FREE',
   task: 'TASK_POS',
@@ -635,7 +638,7 @@ function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedR
             const labelTransform = `scale(${sx} ${sy})`
             return (
               <g key={`${robot.team}-${robot.id}-${robot.x}-${robot.y}`} className="robot-group" onClick={(event) => { event.stopPropagation(); onToggleRobot(robot.id) }}>
-                {command?.position ? (
+                {command?.position && POSITION_TASKS.has(command.task) ? (
                   <line x1={originX} y1={originY} x2={command.position.x} y2={command.position.y} className="command-line" markerEnd="url(#target-arrow)" />
                 ) : null}
                 {kickArrow ? (
