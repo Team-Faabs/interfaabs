@@ -804,7 +804,7 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
           <span>Field side</span>
           <select value={game.side ? 'minus' : 'plus'} onChange={(event) => onChangeGame({ side: event.target.value === 'minus' })}>
             <option value="plus">Positive (x+)</option>
-            <option value="minus">Negative (x−)</option>
+            <option value="minus">Negative (x-)</option>
           </select>
         </label>
         <label>
@@ -812,7 +812,7 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
           <select value={game.goalkeeperId} onChange={(event) => onChangeGame({ goalkeeperId: Number(event.target.value) })}>
             {!goalieOnTeam ? (
               <option value={game.goalkeeperId}>
-                {goalieIds.length === 0 ? `${game.goalkeeperId} — no robots on field` : `${game.goalkeeperId} — not on field`}
+                {goalieIds.length === 0 ? `${game.goalkeeperId} (no robots on field)` : `${game.goalkeeperId} (not on field)`}
               </option>
             ) : null}
             {goalieIds.map((id) => (
@@ -833,7 +833,7 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
       <p className="muted small gamemode-hint">Max speed 0 = unlimited.</p>
       <div className="preview-row">
         <span className="command-preview">
-          {game.teamColor ? 'Blue' : 'Yellow'} · {game.side ? 'x−' : 'x+'} · Goalie {game.goalkeeperId} ·{' '}
+          {game.teamColor ? 'Blue' : 'Yellow'} · {game.side ? 'x-' : 'x+'} · Goalie {game.goalkeeperId} ·{' '}
           {game.maxSpeed ? `${game.maxSpeed} mm/s` : 'unlimited'}
         </span>
         <button className="action primary" onClick={onApply}>Apply</button>
