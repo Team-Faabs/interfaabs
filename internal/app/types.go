@@ -122,15 +122,29 @@ type Vector2 struct {
 }
 
 type InterfaceOptions struct {
+	Mode   string        `json:"mode"`
+	Manual ManualOptions `json:"manual"`
+	Game   GameOptions   `json:"game"`
+	Test   TestOptions   `json:"test"`
+}
+
+type ManualOptions struct {
 	EnableTestfield bool   `json:"enableTestfield"`
 	Testfield       uint32 `json:"testfield"`
 	BallTracked     bool   `json:"ballTracked"`
 	GCData          bool   `json:"gcData"`
-	GameMode        bool   `json:"gameMode"`
-	Side            bool   `json:"side"`
-	TeamColor       bool   `json:"teamColor"`
-	GoalkeeperID    uint32 `json:"goalkeeperId"`
-	MaxSpeed        uint32 `json:"maxSpeed"`
+}
+
+type GameOptions struct {
+	Side         bool   `json:"side"`
+	TeamColor    bool   `json:"teamColor"`
+	GoalkeeperID uint32 `json:"goalkeeperId"`
+	MaxSpeed     uint32 `json:"maxSpeed"`
+}
+
+type TestOptions struct {
+	Test     string   `json:"test"`
+	RobotIDs []uint32 `json:"robotIds"`
 }
 
 type RefereeState struct {

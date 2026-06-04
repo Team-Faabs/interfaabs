@@ -26,15 +26,29 @@ type CrashPilotConfig struct {
 }
 
 type InterfaceDefaultsConfig struct {
+	Mode   string               `toml:"mode"`
+	Manual ManualDefaultsConfig `toml:"manual"`
+	Game   GameDefaultsConfig   `toml:"game"`
+	Test   TestDefaultsConfig   `toml:"test"`
+}
+
+type ManualDefaultsConfig struct {
 	EnableTestfield bool   `toml:"enable_testfield"`
 	Testfield       uint32 `toml:"testfield"`
 	BallTracked     bool   `toml:"ball_tracked"`
 	GCData          bool   `toml:"gc_data"`
-	GameMode        bool   `toml:"game_mode"`
-	Side            bool   `toml:"side"`
-	TeamColor       bool   `toml:"team_color"`
-	Goalkeeper      uint32 `toml:"goalkeeper_id"`
-	MaxSpeed        uint32 `toml:"max_speed"`
+}
+
+type GameDefaultsConfig struct {
+	Side       bool   `toml:"side"`
+	TeamColor  bool   `toml:"team_color"`
+	Goalkeeper uint32 `toml:"goalkeeper_id"`
+	MaxSpeed   uint32 `toml:"max_speed"`
+}
+
+type TestDefaultsConfig struct {
+	Test     string   `toml:"test"`
+	RobotIDs []uint32 `toml:"robot_ids"`
 }
 
 type FieldConfig struct {
@@ -64,15 +78,23 @@ func Default() Config {
 			WriteTimeoutMS:     2000,
 		},
 		InterfaceDefaults: InterfaceDefaultsConfig{
-			EnableTestfield: false,
-			Testfield:       0,
-			BallTracked:     true,
-			GCData:          true,
-			GameMode:        false,
-			Side:            false,
-			TeamColor:       false,
-			Goalkeeper:      0,
-			MaxSpeed:        0,
+			Mode: "MODE_MANUAL",
+			Manual: ManualDefaultsConfig{
+				EnableTestfield: false,
+				Testfield:       0,
+				BallTracked:     true,
+				GCData:          true,
+			},
+			Game: GameDefaultsConfig{
+				Side:       false,
+				TeamColor:  false,
+				Goalkeeper: 0,
+				MaxSpeed:   0,
+			},
+			Test: TestDefaultsConfig{
+				Test:     "TEST_NONE",
+				RobotIDs: nil,
+			},
 		},
 		Field: FieldConfig{
 			LengthMM:           9000,
@@ -101,6 +123,12 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Server.Port <= 0 {
 		cfg.Server.Port = 8080
+	}
+	if cfg.InterfaceDefaults.Mode == "" {
+		cfg.InterfaceDefaults.Mode = "MODE_MANUAL"
+	}
+	if cfg.InterfaceDefaults.Test.Test == "" {
+		cfg.InterfaceDefaults.Test.Test = "TEST_NONE"
 	}
 	if cfg.CrashPilot.WSURL == "" {
 		return Config{}, fmt.Errorf("crashpilot.ws_url is required")

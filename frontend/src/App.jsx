@@ -25,6 +25,19 @@ const TASK_OPTIONS = [
 // Tasks that actually drive to a target position — only these get a target arrow on the field.
 const POSITION_TASKS = new Set(['TASK_POS', 'TASK_DRIBBLE', 'TASK_PosBall'])
 
+const MODE_OPTIONS = [
+  { value: 'MODE_MANUAL', label: 'Manual' },
+  { value: 'MODE_GAME', label: 'Game' },
+  { value: 'MODE_TEST', label: 'Test' },
+]
+
+const TEST_OPTIONS = [
+  { value: 'TEST_NONE', label: 'None' },
+  { value: 'TEST_BALL_CONTROL', label: 'Ball control' },
+  { value: 'TEST_DRIBBLER', label: 'Dribbler' },
+  { value: 'TEST_KICKER', label: 'Kicker' },
+]
+
 const INITIAL_COMMAND = {
   state: 'STATE_FREE',
   task: 'TASK_POS',
@@ -73,15 +86,23 @@ const EMPTY_SNAPSHOT = {
   },
   robotCommands: [],
   interfaceOptions: {
-    enableTestfield: false,
-    testfield: 0,
-    ballTracked: true,
-    gcData: true,
-    gameMode: false,
-    side: false,
-    teamColor: false,
-    goalkeeperId: 0,
-    maxSpeed: 0,
+    mode: 'MODE_MANUAL',
+    manual: {
+      enableTestfield: false,
+      testfield: 0,
+      ballTracked: true,
+      gcData: true,
+    },
+    game: {
+      side: false,
+      teamColor: false,
+      goalkeeperId: 0,
+      maxSpeed: 0,
+    },
+    test: {
+      test: 'TEST_NONE',
+      robotIds: [],
+    },
   },
   referee: null,
   knownRobotIds: [],
@@ -118,11 +139,12 @@ export default function App() {
   const socketRef = useRef(null)
   const retryTimerRef = useRef(null)
 
-  const { enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed } =
-    snapshot.interfaceOptions
+  // Resync the editable draft only when the server's options actually change by value,
+  // so live snapshots (vision frames) don't clobber edits in progress.
+  const interfaceOptionsKey = JSON.stringify(snapshot.interfaceOptions)
   useEffect(() => {
-    setOptionsDraft({ enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed })
-  }, [enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed])
+    setOptionsDraft(JSON.parse(interfaceOptionsKey))
+  }, [interfaceOptionsKey])
 
   useEffect(() => {
     const connect = () => {
@@ -183,10 +205,10 @@ export default function App() {
     }))
   }, [snapshot.robotCommands, snapshot.vision.robots])
   const teamGoalieIds = useMemo(() => {
-    const team = optionsDraft.teamColor ? 'blue' : 'yellow'
+    const team = optionsDraft.game.teamColor ? 'blue' : 'yellow'
     const ids = snapshot.vision.robots.filter((robot) => robot.team === team).map((robot) => robot.id)
     return [...new Set(ids)].sort((a, b) => a - b)
-  }, [snapshot.vision.robots, optionsDraft.teamColor])
+  }, [snapshot.vision.robots, optionsDraft.game.teamColor])
 
   function sendMessage(message) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -227,6 +249,15 @@ export default function App() {
   function submitOptions() {
     sendMessage({ type: 'set_options', options: optionsDraft })
   }
+
+  const setMode = (mode) => setOptionsDraft((current) => ({ ...current, mode }))
+  const setManual = (patch) => setOptionsDraft((current) => ({ ...current, manual: { ...current.manual, ...patch } }))
+  const setGame = (patch) => setOptionsDraft((current) => ({ ...current, game: { ...current.game, ...patch } }))
+  const setTest = (patch) => setOptionsDraft((current) => ({ ...current, test: { ...current.test, ...patch } }))
+
+  const activeMode = optionsDraft.mode
+  const builderModeKey =
+    builderTab === 'gamemode' ? 'MODE_GAME' : builderTab === 'testmode' ? 'MODE_TEST' : 'MODE_MANUAL'
 
   function sendCommand() {
     if (selectedRobots.length === 0) {
@@ -300,7 +331,7 @@ export default function App() {
             selectedRobotIds={selectedRobotIds}
             flipX={flipX}
             flipY={flipY}
-            testfield={snapshot.interfaceOptions.enableTestfield ? snapshot.interfaceOptions.testfield : null}
+            testfield={snapshot.interfaceOptions.manual.enableTestfield ? snapshot.interfaceOptions.manual.testfield : null}
             onPickPosition={pickFieldPosition}
             onToggleRobot={toggleRobot}
           />
@@ -311,16 +342,22 @@ export default function App() {
           <div className="section-head compact">
             <div className="builder-tabs">
               <button
-                className={`tab-btn ${builderTab === 'command' ? 'active' : ''}`}
+                className={`tab-btn ${builderTab === 'command' ? 'active' : ''} ${optionsDraft.mode === 'MODE_MANUAL' ? 'is-mode' : ''}`}
                 onClick={() => setBuilderTab('command')}
               >
                 Command
               </button>
               <button
-                className={`tab-btn ${builderTab === 'gamemode' ? 'active' : ''}`}
+                className={`tab-btn ${builderTab === 'gamemode' ? 'active' : ''} ${optionsDraft.mode === 'MODE_GAME' ? 'is-mode' : ''}`}
                 onClick={() => setBuilderTab('gamemode')}
               >
-                Game Mode
+                Game
+              </button>
+              <button
+                className={`tab-btn ${builderTab === 'testmode' ? 'active' : ''} ${optionsDraft.mode === 'MODE_TEST' ? 'is-mode' : ''}`}
+                onClick={() => setBuilderTab('testmode')}
+              >
+                Test
               </button>
             </div>
             {builderTab === 'command' ? (
@@ -330,14 +367,21 @@ export default function App() {
                   : `${snapshot.knownRobotIds.length} (all)`}
               </div>
             ) : (
-              <span className={`gamemode-pill ${optionsDraft.gameMode ? 'on' : ''}`}>
-                {optionsDraft.gameMode ? 'Enabled' : 'Disabled'}
+              <span className={`gamemode-pill ${activeMode === builderModeKey ? 'on' : ''}`}>
+                {activeMode === builderModeKey ? 'Active mode' : 'Inactive'}
               </span>
             )}
           </div>
 
           {builderTab === 'gamemode' ? (
-            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChange={setOptionsDraft} onApply={submitOptions} />
+            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChangeGame={setGame} onApply={submitOptions} />
+          ) : builderTab === 'testmode' ? (
+            <TestModePanel
+              options={optionsDraft}
+              knownRobotIds={snapshot.knownRobotIds}
+              onChangeTest={setTest}
+              onApply={submitOptions}
+            />
           ) : (
           <>
           <div className="robot-selector">
@@ -407,6 +451,16 @@ export default function App() {
             </label>
           </div>
 
+          <div className="manual-options">
+            <ToggleCard
+              label="GC data"
+              description="React to game controller messages."
+              checked={optionsDraft.manual.gcData}
+              onChange={(checked) => setManual({ gcData: checked })}
+            />
+            <button className="action secondary small" onClick={submitOptions}>Apply</button>
+          </div>
+
           <div className="preview-row">
             <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}{command.enemyId ? ` · Enemy ${command.enemyId}` : ''}</span>
             <button className="action primary" onClick={sendCommand}>Send</button>
@@ -435,28 +489,36 @@ export default function App() {
             <h2>Global Options</h2>
             <button className="action secondary small" onClick={submitOptions}>Apply</button>
           </div>
+          <div className="mode-selector">
+            <span className="mode-label">Mode</span>
+            <div className="mode-switch">
+              {MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  className={`mode-btn ${optionsDraft.mode === option.value ? 'active' : ''}`}
+                  onClick={() => setMode(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="toggle-grid">
             <ToggleCard
               label="Testfield"
               description="Quadrant test mode."
-              checked={optionsDraft.enableTestfield}
-              onChange={(checked) => setOptionsDraft((current) => ({ ...current, enableTestfield: checked }))}
+              checked={optionsDraft.manual.enableTestfield}
+              onChange={(checked) => setManual({ enableTestfield: checked })}
             />
             <ToggleCard
               label="Track balls"
               description="Use tracked instead of raw balls."
-              checked={optionsDraft.ballTracked}
-              onChange={(checked) => setOptionsDraft((current) => ({ ...current, ballTracked: checked }))}
-            />
-            <ToggleCard
-              label="GC data"
-              description="React to game controller messages."
-              checked={optionsDraft.gcData}
-              onChange={(checked) => setOptionsDraft((current) => ({ ...current, gcData: checked }))}
+              checked={optionsDraft.manual.ballTracked}
+              onChange={(checked) => setManual({ ballTracked: checked })}
             />
             <label className="testfield-card">
               <span>Quadrant</span>
-              <select value={optionsDraft.testfield} onChange={(event) => setOptionsDraft((current) => ({ ...current, testfield: Number(event.target.value) }))}>
+              <select value={optionsDraft.manual.testfield} onChange={(event) => setManual({ testfield: Number(event.target.value) })}>
                 <option value={0}>0: -x +y</option>
                 <option value={1}>1: +x +y</option>
                 <option value={2}>2: +x -y</option>
@@ -719,38 +781,38 @@ function ToggleCard({ label, description, checked, onChange }) {
   )
 }
 
-function GameModePanel({ options, goalieIds, onChange, onApply }) {
-  const set = (patch) => onChange((current) => ({ ...current, ...patch }))
-  const goalieOnTeam = goalieIds.includes(options.goalkeeperId)
+function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
+  const game = options.game
+  const active = options.mode === 'MODE_GAME'
+  const goalieOnTeam = goalieIds.includes(game.goalkeeperId)
   return (
     <div className="gamemode-panel">
-      <ToggleCard
-        label="Game Mode"
-        description="Hand control to CrashPilot. Disables the manual command unit."
-        checked={options.gameMode}
-        onChange={(checked) => set({ gameMode: checked })}
-      />
+      <p className="muted small gamemode-hint">
+        {active
+          ? 'Game mode is active — CrashPilot is driving.'
+          : 'Set the active mode to Game in Global Options to hand over control.'}
+      </p>
       <div className="form-grid">
         <label>
           <span>Team color</span>
-          <select value={options.teamColor ? 'blue' : 'yellow'} onChange={(event) => set({ teamColor: event.target.value === 'blue' })}>
+          <select value={game.teamColor ? 'blue' : 'yellow'} onChange={(event) => onChangeGame({ teamColor: event.target.value === 'blue' })}>
             <option value="yellow">Yellow</option>
             <option value="blue">Blue</option>
           </select>
         </label>
         <label>
           <span>Field side</span>
-          <select value={options.side ? 'minus' : 'plus'} onChange={(event) => set({ side: event.target.value === 'minus' })}>
+          <select value={game.side ? 'minus' : 'plus'} onChange={(event) => onChangeGame({ side: event.target.value === 'minus' })}>
             <option value="plus">Positive (x+)</option>
             <option value="minus">Negative (x−)</option>
           </select>
         </label>
         <label>
-          <span>Goalie ({options.teamColor ? 'Blue' : 'Yellow'})</span>
-          <select value={options.goalkeeperId} onChange={(event) => set({ goalkeeperId: Number(event.target.value) })}>
+          <span>Goalie ({game.teamColor ? 'Blue' : 'Yellow'})</span>
+          <select value={game.goalkeeperId} onChange={(event) => onChangeGame({ goalkeeperId: Number(event.target.value) })}>
             {!goalieOnTeam ? (
-              <option value={options.goalkeeperId}>
-                {goalieIds.length === 0 ? `${options.goalkeeperId} — no robots on field` : `${options.goalkeeperId} — not on field`}
+              <option value={game.goalkeeperId}>
+                {goalieIds.length === 0 ? `${game.goalkeeperId} — no robots on field` : `${game.goalkeeperId} — not on field`}
               </option>
             ) : null}
             {goalieIds.map((id) => (
@@ -763,21 +825,70 @@ function GameModePanel({ options, goalieIds, onChange, onApply }) {
           <input
             type="number"
             min="0"
-            value={options.maxSpeed}
-            onChange={(event) => set({ maxSpeed: Math.max(0, Math.trunc(Number(event.target.value)) || 0) })}
+            value={game.maxSpeed}
+            onChange={(event) => onChangeGame({ maxSpeed: Math.max(0, Math.trunc(Number(event.target.value)) || 0) })}
           />
         </label>
       </div>
-      <p className="muted small gamemode-hint">
-        {options.gameMode
-          ? 'CrashPilot is driving — manual commands are ignored.'
-          : 'Manual command unit active. Enable game mode to hand over control.'}{' '}
-        Max speed 0 = unlimited.
-      </p>
+      <p className="muted small gamemode-hint">Max speed 0 = unlimited.</p>
       <div className="preview-row">
         <span className="command-preview">
-          {options.gameMode ? 'On' : 'Off'} · {options.teamColor ? 'Blue' : 'Yellow'} · {options.side ? 'x−' : 'x+'} · Goalie{' '}
-          {options.goalkeeperId} · {options.maxSpeed ? `${options.maxSpeed} mm/s` : 'unlimited'}
+          {game.teamColor ? 'Blue' : 'Yellow'} · {game.side ? 'x−' : 'x+'} · Goalie {game.goalkeeperId} ·{' '}
+          {game.maxSpeed ? `${game.maxSpeed} mm/s` : 'unlimited'}
+        </span>
+        <button className="action primary" onClick={onApply}>Apply</button>
+      </div>
+    </div>
+  )
+}
+
+function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
+  const test = options.test
+  const active = options.mode === 'MODE_TEST'
+  const selected = test.robotIds || []
+  const toggleRobot = (robotId) => {
+    onChangeTest({
+      robotIds: selected.includes(robotId)
+        ? selected.filter((id) => id !== robotId)
+        : [...selected, robotId].sort((a, b) => a - b),
+    })
+  }
+  const testLabel = TEST_OPTIONS.find((option) => option.value === test.test)?.label ?? 'None'
+  return (
+    <div className="gamemode-panel">
+      <p className="muted small gamemode-hint">
+        {active
+          ? 'Test mode is active — CrashPilot runs the selected test.'
+          : 'Set the active mode to Test in Global Options to run the selected test.'}
+      </p>
+      <div className="form-grid">
+        <label className="span-2">
+          <span>Test</span>
+          <select value={test.test} onChange={(event) => onChangeTest({ test: event.target.value })}>
+            {TEST_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="test-robots">
+        <span className="mode-label">Robots</span>
+        <div className="robot-selector">
+          {knownRobotIds.length === 0 ? <p className="muted small">Waiting for robot ids.</p> : null}
+          {knownRobotIds.map((robotId) => (
+            <button
+              key={robotId}
+              className={`robot-chip ${selected.includes(robotId) ? 'selected' : ''}`}
+              onClick={() => toggleRobot(robotId)}
+            >
+              {robotId}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="preview-row">
+        <span className="command-preview">
+          {testLabel} · {selected.length ? `Robots ${selected.join(', ')}` : 'no robots selected'}
         </span>
         <button className="action primary" onClick={onApply}>Apply</button>
       </div>

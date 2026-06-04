@@ -10,12 +10,16 @@ handshake_timeout_ms = 10000
 write_timeout_ms = 2000
 
 [interface_defaults]
+# Active mode CrashPilot should run: MODE_MANUAL, MODE_GAME or MODE_TEST
+mode = "MODE_MANUAL"
+
+[interface_defaults.manual]
 enable_testfield = false
 testfield = 0
 ball_tracked = true
 gc_data = false
-# Game mode hands control to CrashPilot and disables the manual command unit.
-game_mode = false
+
+[interface_defaults.game]
 # Field side: false for x+, true for x-
 side = false
 # Team color: false for Yellow, true for Blue
@@ -24,6 +28,12 @@ team_color = false
 goalkeeper_id = 0
 # Max speed for the game in mm/s, 0 for unlimited
 max_speed = 0
+
+[interface_defaults.test]
+# Test to run: TEST_NONE, TEST_BALL_CONTROL, TEST_DRIBBLER or TEST_KICKER
+test = "TEST_NONE"
+# Robot ids that participate in the test
+robot_ids = []
 
 [field]
 # Fallback field geometry used until SSL geometry arrives from the controller.

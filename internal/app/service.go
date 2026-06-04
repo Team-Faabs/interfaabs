@@ -62,15 +62,23 @@ func New(cfg config.Config) (*Service, error) {
 			Vision:        VisionState{Source: "waiting", SourceLabel: "Waiting for controller data", Balls: []Ball{}, Robots: []Robot{}},
 			RobotCommands: []RobotCommand{},
 			InterfaceOptions: InterfaceOptions{
-				EnableTestfield: cfg.InterfaceDefaults.EnableTestfield,
-				Testfield:       cfg.InterfaceDefaults.Testfield,
-				BallTracked:     cfg.InterfaceDefaults.BallTracked,
-				GCData:          cfg.InterfaceDefaults.GCData,
-				GameMode:        cfg.InterfaceDefaults.GameMode,
-				Side:            cfg.InterfaceDefaults.Side,
-				TeamColor:       cfg.InterfaceDefaults.TeamColor,
-				GoalkeeperID:    cfg.InterfaceDefaults.Goalkeeper,
-				MaxSpeed:        cfg.InterfaceDefaults.MaxSpeed,
+				Mode: cfg.InterfaceDefaults.Mode,
+				Manual: ManualOptions{
+					EnableTestfield: cfg.InterfaceDefaults.Manual.EnableTestfield,
+					Testfield:       cfg.InterfaceDefaults.Manual.Testfield,
+					BallTracked:     cfg.InterfaceDefaults.Manual.BallTracked,
+					GCData:          cfg.InterfaceDefaults.Manual.GCData,
+				},
+				Game: GameOptions{
+					Side:         cfg.InterfaceDefaults.Game.Side,
+					TeamColor:    cfg.InterfaceDefaults.Game.TeamColor,
+					GoalkeeperID: cfg.InterfaceDefaults.Game.Goalkeeper,
+					MaxSpeed:     cfg.InterfaceDefaults.Game.MaxSpeed,
+				},
+				Test: TestOptions{
+					Test:     cfg.InterfaceDefaults.Test.Test,
+					RobotIDs: append([]uint32{}, cfg.InterfaceDefaults.Test.RobotIDs...),
+				},
 			},
 			KnownRobotIDs: []uint32{},
 			Debug:         DebugState{StartedAt: startedAt, LastEvent: "server started"},
@@ -256,15 +264,23 @@ func (s *Service) sendInterfaceMessage(commands []*crashpilot_interface.Interfac
 	payload, err := proto.Marshal(&crashpilot_interface.InterfaceWrapper_CP{
 		RobotCommands: commands,
 		InterfaceCommand: &crashpilot_interface.InterfaceCommand_CP{
-			EnableTestfield: boolPtr(options.EnableTestfield),
-			Testfield:       uint32Ptr(options.Testfield),
-			BallTracked:     boolPtr(options.BallTracked),
-			GcData:          boolPtr(options.GCData),
-			GameMode:        boolPtr(options.GameMode),
-			Side:            boolPtr(options.Side),
-			TeamColor:       boolPtr(options.TeamColor),
-			GoalkeeperId:    uint32Ptr(options.GoalkeeperID),
-			MaxSpeed:        uint32Ptr(options.MaxSpeed),
+			Mode: cpModePtr(options.Mode),
+			Manual: &crashpilot_interface.InterfaceManual_CP{
+				EnableTestfield: boolPtr(options.Manual.EnableTestfield),
+				Testfield:       uint32Ptr(options.Manual.Testfield),
+				BallTracked:     boolPtr(options.Manual.BallTracked),
+				GcData:          boolPtr(options.Manual.GCData),
+			},
+			Game: &crashpilot_interface.InterfaceGame_CP{
+				Side:         boolPtr(options.Game.Side),
+				TeamColor:    boolPtr(options.Game.TeamColor),
+				GoalkeeperId: uint32Ptr(options.Game.GoalkeeperID),
+				MaxSpeed:     uint32Ptr(options.Game.MaxSpeed),
+			},
+			Test: &crashpilot_interface.InterfaceTest_CP{
+				Test:     cpTestPtr(options.Test.Test),
+				RobotIds: append([]uint32(nil), options.Test.RobotIDs...),
+			},
 		},
 	})
 	if err != nil {
@@ -1035,6 +1051,24 @@ func int32Ptr(v int32) *int32 { return &v }
 func ptrState(v crashpilot_interface.CP_State) *crashpilot_interface.CP_State { return &v }
 
 func ptrTask(v crashpilot_interface.CP_Task) *crashpilot_interface.CP_Task { return &v }
+
+func cpModePtr(name string) *crashpilot_interface.CpMode {
+	value, ok := crashpilot_interface.CpMode_value[name]
+	if !ok {
+		value = int32(crashpilot_interface.CpMode_MODE_MANUAL)
+	}
+	mode := crashpilot_interface.CpMode(value)
+	return &mode
+}
+
+func cpTestPtr(name string) *crashpilot_interface.CPTests {
+	value, ok := crashpilot_interface.CPTests_value[name]
+	if !ok {
+		value = int32(crashpilot_interface.CPTests_TEST_NONE)
+	}
+	test := crashpilot_interface.CPTests(value)
+	return &test
+}
 
 func trackedTeamLabel(robotID *crashpilot_interface.RobotId) string {
 	if robotID == nil {
