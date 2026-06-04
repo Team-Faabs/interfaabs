@@ -126,6 +126,11 @@ type InterfaceOptions struct {
 	Testfield       uint32 `json:"testfield"`
 	BallTracked     bool   `json:"ballTracked"`
 	GCData          bool   `json:"gcData"`
+	GameMode        bool   `json:"gameMode"`
+	Side            bool   `json:"side"`
+	TeamColor       bool   `json:"teamColor"`
+	GoalkeeperID    uint32 `json:"goalkeeperId"`
+	MaxSpeed        uint32 `json:"maxSpeed"`
 }
 
 type RefereeState struct {

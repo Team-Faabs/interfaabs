@@ -30,6 +30,11 @@ type InterfaceDefaultsConfig struct {
 	Testfield       uint32 `toml:"testfield"`
 	BallTracked     bool   `toml:"ball_tracked"`
 	GCData          bool   `toml:"gc_data"`
+	GameMode        bool   `toml:"game_mode"`
+	Side            bool   `toml:"side"`
+	TeamColor       bool   `toml:"team_color"`
+	Goalkeeper      uint32 `toml:"goalkeeper_id"`
+	MaxSpeed        uint32 `toml:"max_speed"`
 }
 
 type FieldConfig struct {
@@ -63,6 +68,11 @@ func Default() Config {
 			Testfield:       0,
 			BallTracked:     true,
 			GCData:          true,
+			GameMode:        false,
+			Side:            false,
+			TeamColor:       false,
+			Goalkeeper:      0,
+			MaxSpeed:        0,
 		},
 		Field: FieldConfig{
 			LengthMM:           9000,

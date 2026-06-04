@@ -14,6 +14,16 @@ enable_testfield = false
 testfield = 0
 ball_tracked = true
 gc_data = false
+# Game mode hands control to CrashPilot and disables the manual command unit.
+game_mode = false
+# Field side: false for x+, true for x-
+side = false
+# Team color: false for Yellow, true for Blue
+team_color = false
+# Robot id that should act as goalkeeper
+goalkeeper_id = 0
+# Max speed for the game in mm/s, 0 for unlimited
+max_speed = 0
 
 [field]
 # Fallback field geometry used until SSL geometry arrives from the controller.

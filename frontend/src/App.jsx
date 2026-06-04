@@ -74,6 +74,11 @@ const EMPTY_SNAPSHOT = {
     testfield: 0,
     ballTracked: true,
     gcData: true,
+    gameMode: false,
+    side: false,
+    teamColor: false,
+    goalkeeperId: 0,
+    maxSpeed: 0,
   },
   referee: null,
   knownRobotIds: [],
@@ -104,15 +109,17 @@ export default function App() {
   const [selectedRobotIds, setSelectedRobotIds] = useState([])
   const [command, setCommand] = useState(INITIAL_COMMAND)
   const [optionsDraft, setOptionsDraft] = useState(EMPTY_SNAPSHOT.interfaceOptions)
+  const [builderTab, setBuilderTab] = useState('command')
   const [flipX, setFlipX] = useLocalStorage('cp:flipX', false)
   const [flipY, setFlipY] = useLocalStorage('cp:flipY', false)
   const socketRef = useRef(null)
   const retryTimerRef = useRef(null)
 
-  const { enableTestfield, testfield, ballTracked, gcData } = snapshot.interfaceOptions
+  const { enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed } =
+    snapshot.interfaceOptions
   useEffect(() => {
-    setOptionsDraft({ enableTestfield, testfield, ballTracked, gcData })
-  }, [enableTestfield, testfield, ballTracked, gcData])
+    setOptionsDraft({ enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed })
+  }, [enableTestfield, testfield, ballTracked, gcData, gameMode, side, teamColor, goalkeeperId, maxSpeed])
 
   useEffect(() => {
     const connect = () => {
@@ -172,6 +179,11 @@ export default function App() {
       cpCommand: map.get(robot.id) ?? null,
     }))
   }, [snapshot.robotCommands, snapshot.vision.robots])
+  const teamGoalieIds = useMemo(() => {
+    const team = optionsDraft.teamColor ? 'blue' : 'yellow'
+    const ids = snapshot.vision.robots.filter((robot) => robot.team === team).map((robot) => robot.id)
+    return [...new Set(ids)].sort((a, b) => a - b)
+  }, [snapshot.vision.robots, optionsDraft.teamColor])
 
   function sendMessage(message) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -294,14 +306,37 @@ export default function App() {
 
         <section className="control-panel card">
           <div className="section-head compact">
-            <h2>Command Builder</h2>
-            <div className="selection-summary">
-              {selectedRobotIds.length > 0
-                ? `${selectedRobotIds.length} selected`
-                : `${snapshot.knownRobotIds.length} (all)`}
+            <div className="builder-tabs">
+              <button
+                className={`tab-btn ${builderTab === 'command' ? 'active' : ''}`}
+                onClick={() => setBuilderTab('command')}
+              >
+                Command
+              </button>
+              <button
+                className={`tab-btn ${builderTab === 'gamemode' ? 'active' : ''}`}
+                onClick={() => setBuilderTab('gamemode')}
+              >
+                Game Mode
+              </button>
             </div>
+            {builderTab === 'command' ? (
+              <div className="selection-summary">
+                {selectedRobotIds.length > 0
+                  ? `${selectedRobotIds.length} selected`
+                  : `${snapshot.knownRobotIds.length} (all)`}
+              </div>
+            ) : (
+              <span className={`gamemode-pill ${optionsDraft.gameMode ? 'on' : ''}`}>
+                {optionsDraft.gameMode ? 'Enabled' : 'Disabled'}
+              </span>
+            )}
           </div>
 
+          {builderTab === 'gamemode' ? (
+            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChange={setOptionsDraft} onApply={submitOptions} />
+          ) : (
+          <>
           <div className="robot-selector">
             {snapshot.knownRobotIds.length === 0 ? (
               <p className="muted">Waiting for robot ids.</p>
@@ -373,6 +408,8 @@ export default function App() {
             <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}{command.enemyId ? ` · Enemy ${command.enemyId}` : ''}</span>
             <button className="action primary" onClick={sendCommand}>Send</button>
           </div>
+          </>
+          )}
         </section>
 
         <section className="topbar-panel card">
@@ -484,6 +521,303 @@ export default function App() {
     </div>
   )
 }
+
+function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedRobotIds, flipX, flipY, testfield, onPickPosition, onToggleRobot }) {
+  const padding = 760
+  const width = field.lengthMm + padding * 2
+  const height = field.widthMm + padding * 2
+  const viewBox = `${-field.lengthMm / 2 - padding} ${-field.widthMm / 2 - padding} ${width} ${height}`
+  const penaltyX = field.lengthMm / 2 - field.penaltyAreaDepthMm
+  const goalDepth = field.goalDepthMm
+  const robotRadius = Math.max(field.maxRobotRadiusMm || 90, 85)
+  const ballRadius = Math.max(field.ballRadiusMm || 22, 22)
+  const halfL = field.lengthMm / 2
+  const halfW = field.widthMm / 2
+  const labelOffset = 280
+  const tickLabelOffset = 460
+  const sx = flipX ? -1 : 1
+  const sy = flipY ? -1 : 1
+
+  function handleFieldClick(event) {
+    const svg = event.currentTarget
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const transformed = point.matrixTransform(svg.getScreenCTM().inverse())
+    const fieldX = transformed.x * sx
+    const fieldY = transformed.y * sy
+    const clampedX = clamp(fieldX, -halfL, halfL)
+    const clampedY = clamp(fieldY, -halfW, halfW)
+    onPickPosition({ x: clampedX, y: clampedY })
+  }
+
+  return (
+    <div className="field-shell">
+      <svg className="field-svg clickable" viewBox={viewBox} aria-label="Soccer field view" onClick={handleFieldClick}>
+        <defs>
+          <marker id="target-arrow" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto">
+            <path d="M 0 0 L 16 8 L 0 16 z" fill="rgba(177, 126, 255, 0.9)" />
+          </marker>
+          <marker id="kick-arrow" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto">
+            <path d="M 0 0 L 16 8 L 0 16 z" fill="rgba(107, 255, 214, 0.95)" />
+          </marker>
+        </defs>
+
+        <g transform={`scale(${sx} ${sy})`}>
+          <rect
+            x={-halfL - field.boundaryWidthMm}
+            y={-halfW - field.boundaryWidthMm}
+            width={field.lengthMm + field.boundaryWidthMm * 2}
+            height={field.widthMm + field.boundaryWidthMm * 2}
+            className="field-boundary"
+            rx="120"
+          />
+          <rect x={-halfL} y={-halfW} width={field.lengthMm} height={field.widthMm} className="field-outline" rx="20" />
+          <line x1={0} y1={-halfW} x2={0} y2={halfW} className="field-line" />
+          <circle cx={0} cy={0} r={field.centerCircleMm} className="field-line" />
+          <circle cx={0} cy={0} r={20} className="field-dot" />
+          <rect x={-halfL} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
+          <rect x={penaltyX} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
+          <rect x={-halfL - goalDepth} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box left" />
+          <rect x={halfL} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box right" />
+
+          {testfield != null ? (() => {
+            const quadrants = {
+              0: { x: -halfL, y: 0,       label: '−X +Y' },
+              1: { x: 0,      y: 0,       label: '+X +Y' },
+              2: { x: 0,      y: -halfW,  label: '+X −Y' },
+              3: { x: -halfL, y: -halfW,  label: '−X −Y' },
+            }
+            const q = quadrants[testfield]
+            if (!q) return null
+            return (
+              <g className="testfield-overlay">
+                <rect x={q.x} y={q.y} width={halfL} height={halfW} className="testfield-rect" />
+                <g transform={`translate(${q.x + halfL / 2} ${q.y + halfW / 2}) scale(${sx} ${sy})`}>
+                  <text x={0} y={-40} className="testfield-label">TESTFIELD</text>
+                  <text x={0} y={140} className="testfield-sublabel">Q{testfield} · {q.label}</text>
+                </g>
+              </g>
+            )
+          })() : null}
+
+          {balls.map((ball, index) => (
+            <g key={`ball-${index}`}>
+              <circle cx={ball.x} cy={ball.y} r={ballRadius * 2} className="ball-glow" />
+              <circle cx={ball.x} cy={ball.y} r={ballRadius} className="ball-dot" />
+            </g>
+          ))}
+
+          {kickedBall ? (
+            <line x1={kickedBall.x} y1={kickedBall.y} x2={kickedBall.stopX || kickedBall.x} y2={kickedBall.stopY || kickedBall.y} className="kicked-ball-line" />
+          ) : null}
+
+          {selectedTarget ? (
+            <g>
+              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.9} className="picked-target-ring" />
+              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.28} className="picked-target-dot" />
+            </g>
+          ) : null}
+
+          {robots.map((robot) => {
+            const radius = robotRadius
+            const isSelected = selectedRobotIds.includes(robot.id)
+            const teamClass = robot.team === 'blue' ? 'robot blue' : robot.team === 'yellow' ? 'robot yellow' : 'robot neutral'
+            const command = robot.cpCommand?.command
+            const self = robot.cpCommand?.self
+            const originX = self?.x ?? robot.x
+            const originY = self?.y ?? robot.y
+            const kickArrow = command?.kickOrientation != null
+            const kickLength = 320
+            const kickAngle = kickArrow ? degreesToRadians(command.kickOrientation) : null
+            const orientation = robot.orientation || 0
+            const bodyPath = robotBodyPath(radius, orientation)
+            const labelTransform = `scale(${sx} ${sy})`
+            return (
+              <g key={`${robot.team}-${robot.id}-${robot.x}-${robot.y}`} className="robot-group" onClick={(event) => { event.stopPropagation(); onToggleRobot(robot.id) }}>
+                {command?.position ? (
+                  <line x1={originX} y1={originY} x2={command.position.x} y2={command.position.y} className="command-line" markerEnd="url(#target-arrow)" />
+                ) : null}
+                {kickArrow ? (
+                  <line
+                    x1={originX}
+                    y1={originY}
+                    x2={originX + Math.cos(kickAngle) * kickLength}
+                    y2={originY + Math.sin(kickAngle) * kickLength}
+                    className="kick-line"
+                    markerEnd="url(#kick-arrow)"
+                  />
+                ) : null}
+                <g transform={`translate(${robot.x} ${robot.y})`}>
+                  {isSelected ? (
+                    <circle cx={0} cy={0} r={radius * 1.55} className="robot-select-ring" />
+                  ) : null}
+                  <path d={bodyPath} className={teamClass} />
+                  <text x={0} y={28} className="robot-label" transform={labelTransform}>{robot.id}</text>
+                </g>
+              </g>
+            )
+          })}
+        </g>
+
+        {/* axis labels (outside flipped group so text reads correctly; positions follow flips) */}
+        <g className="axis-labels">
+          <text x={sx * (halfL + tickLabelOffset)} y={0} className="axis-label">+X</text>
+          <text x={-sx * (halfL + tickLabelOffset)} y={0} className="axis-label">−X</text>
+          <text x={0} y={sy * (halfW + tickLabelOffset)} className="axis-label">+Y</text>
+          <text x={0} y={-sy * (halfW + tickLabelOffset) + 20} className="axis-label">−Y</text>
+        </g>
+
+        {/* angle ticks: 0° → +X, 90° → +Y, 180° → −X, 270° → −Y */}
+        <g className="angle-labels">
+          <text x={sx * (halfL + labelOffset)} y={120} className="angle-label">0°</text>
+          <text x={-80} y={sy * (halfW + labelOffset)} className="angle-label">90°</text>
+          <text x={-sx * (halfL + labelOffset)} y={120} className="angle-label">180°</text>
+          <text x={-80} y={-sy * (halfW + labelOffset) + 20} className="angle-label">270°</text>
+        </g>
+
+        {/* compass in lower-left, fixed orientation */}
+        <g className="compass" transform={`translate(${-halfL - 540}, ${halfW + 360})`}>
+          <circle cx={0} cy={0} r={140} className="compass-bg" />
+          <line x1={-110} y1={0} x2={sx * 110} y2={0} className="compass-axis" markerEnd="url(#target-arrow)" />
+          <line x1={0} y1={-110} x2={0} y2={sy * 110} className="compass-axis" markerEnd="url(#target-arrow)" />
+          <text x={sx * 150} y={20} className="compass-text">X</text>
+          <text x={-10} y={sy * 180} className="compass-text">Y</text>
+        </g>
+      </svg>
+    </div>
+  )
+}
+
+function robotBodyPath(radius, orientation) {
+  // SSL-style robot body drawn around (0,0): circle with a flat face on the kicker side.
+  const notch = 0.55 // half-angle of the flat face in radians
+  const a1 = orientation + notch
+  const a2 = orientation - notch
+  const x1 = Math.cos(a1) * radius
+  const y1 = Math.sin(a1) * radius
+  const x2 = Math.cos(a2) * radius
+  const y2 = Math.sin(a2) * radius
+  return `M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2} Z`
+}
+
+function ToggleCard({ label, description, checked, onChange }) {
+  return (
+    <label className="toggle-card">
+      <div>
+        <strong>{label}</strong>
+        <p>{description}</p>
+      </div>
+      <span className={`toggle-switch ${checked ? 'checked' : ''}`}>
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span />
+      </span>
+    </label>
+  )
+}
+
+function GameModePanel({ options, goalieIds, onChange, onApply }) {
+  const set = (patch) => onChange((current) => ({ ...current, ...patch }))
+  const goalieOnTeam = goalieIds.includes(options.goalkeeperId)
+  return (
+    <div className="gamemode-panel">
+      <ToggleCard
+        label="Game Mode"
+        description="Hand control to CrashPilot. Disables the manual command unit."
+        checked={options.gameMode}
+        onChange={(checked) => set({ gameMode: checked })}
+      />
+      <div className="form-grid">
+        <label>
+          <span>Team color</span>
+          <select value={options.teamColor ? 'blue' : 'yellow'} onChange={(event) => set({ teamColor: event.target.value === 'blue' })}>
+            <option value="yellow">Yellow</option>
+            <option value="blue">Blue</option>
+          </select>
+        </label>
+        <label>
+          <span>Field side</span>
+          <select value={options.side ? 'minus' : 'plus'} onChange={(event) => set({ side: event.target.value === 'minus' })}>
+            <option value="plus">Positive (x+)</option>
+            <option value="minus">Negative (x−)</option>
+          </select>
+        </label>
+        <label>
+          <span>Goalie ({options.teamColor ? 'Blue' : 'Yellow'})</span>
+          <select value={options.goalkeeperId} onChange={(event) => set({ goalkeeperId: Number(event.target.value) })}>
+            {!goalieOnTeam ? (
+              <option value={options.goalkeeperId}>
+                {goalieIds.length === 0 ? `${options.goalkeeperId} — no robots on field` : `${options.goalkeeperId} — not on field`}
+              </option>
+            ) : null}
+            {goalieIds.map((id) => (
+              <option key={id} value={id}>{id}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Max speed (mm/s)</span>
+          <input
+            type="number"
+            min="0"
+            value={options.maxSpeed}
+            onChange={(event) => set({ maxSpeed: Math.max(0, Math.trunc(Number(event.target.value)) || 0) })}
+          />
+        </label>
+      </div>
+      <p className="muted small gamemode-hint">
+        {options.gameMode
+          ? 'CrashPilot is driving — manual commands are ignored.'
+          : 'Manual command unit active. Enable game mode to hand over control.'}{' '}
+        Max speed 0 = unlimited.
+      </p>
+      <div className="preview-row">
+        <span className="command-preview">
+          {options.gameMode ? 'On' : 'Off'} · {options.teamColor ? 'Blue' : 'Yellow'} · {options.side ? 'x−' : 'x+'} · Goalie{' '}
+          {options.goalkeeperId} · {options.maxSpeed ? `${options.maxSpeed} mm/s` : 'unlimited'}
+        </span>
+        <button className="action primary" onClick={onApply}>Apply</button>
+      </div>
+    </div>
+  )
+}
+
+function StatusPill({ label, value, tone }) {
+  return (
+    <div className={`status-pill ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function LegendChip({ label, tone }) {
+  return (
+    <span className={`legend-chip ${tone}`}>
+      <i />
+      {label}
+    </span>
+  )
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="info-row">
+      <span>{label}</span>
+      <strong>{String(value)}</strong>
+    </div>
+  )
+}
+
+
+function degreesToRadians(value) {
+  return (Number(value) * Math.PI) / 180
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
 function buildCommandPayload(command) {
   const payload = {
     state: command.state,
