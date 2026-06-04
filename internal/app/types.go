@@ -84,24 +84,24 @@ type KickedBall struct {
 }
 
 type RobotCommand struct {
-	RobotID      uint32       `json:"robotId"`
-	PacketID     uint32       `json:"packetId"`
-	Timestamp    string       `json:"timestamp,omitempty"`
-	Ball         *Ball        `json:"ball,omitempty"`
-	Self         *Robot       `json:"self,omitempty"`
-	Command      CommandView  `json:"command"`
-	YellowCount  int          `json:"yellowCount"`
-	BlueCount    int          `json:"blueCount"`
-	ReceivedAt   time.Time    `json:"receivedAt"`
-	CommandLabel string       `json:"commandLabel"`
-	AgeMS        int64        `json:"ageMs"`
-	Meta         CommandMeta  `json:"meta"`
+	RobotID      uint32      `json:"robotId"`
+	PacketID     uint32      `json:"packetId"`
+	Timestamp    string      `json:"timestamp,omitempty"`
+	Ball         *Ball       `json:"ball,omitempty"`
+	Self         *Robot      `json:"self,omitempty"`
+	Command      CommandView `json:"command"`
+	YellowCount  int         `json:"yellowCount"`
+	BlueCount    int         `json:"blueCount"`
+	ReceivedAt   time.Time   `json:"receivedAt"`
+	CommandLabel string      `json:"commandLabel"`
+	AgeMS        int64       `json:"ageMs"`
+	Meta         CommandMeta `json:"meta"`
 }
 
 type CommandMeta struct {
-	HasTarget     bool `json:"hasTarget"`
-	HasKick       bool `json:"hasKick"`
-	HasSpeed      bool `json:"hasSpeed"`
+	HasTarget      bool `json:"hasTarget"`
+	HasKick        bool `json:"hasKick"`
+	HasSpeed       bool `json:"hasSpeed"`
 	HasOrientation bool `json:"hasOrientation"`
 }
 
@@ -113,6 +113,7 @@ type CommandView struct {
 	Orientation     *uint32  `json:"orientation,omitempty"`
 	KickOrientation *uint32  `json:"kickOrientation,omitempty"`
 	KickSpeed       *uint32  `json:"kickSpeed,omitempty"`
+	EnemyId         *uint32  `json:"enemyId,omitempty"`
 }
 
 type Vector2 struct {
@@ -128,16 +129,16 @@ type InterfaceOptions struct {
 }
 
 type RefereeState struct {
-	Stage                  string        `json:"stage"`
-	Command                string        `json:"command"`
-	NextCommand            string        `json:"nextCommand,omitempty"`
-	StatusMessage          string        `json:"statusMessage,omitempty"`
-	StageTimeLeftUS        int64         `json:"stageTimeLeftUs,omitempty"`
-	ActionTimeRemainingUS  int64         `json:"actionTimeRemainingUs,omitempty"`
-	BlueTeamOnPositiveHalf bool          `json:"blueTeamOnPositiveHalf"`
-	DesignatedPosition     *Vector2      `json:"designatedPosition,omitempty"`
-	Blue                   RefereeTeam   `json:"blue"`
-	Yellow                 RefereeTeam   `json:"yellow"`
+	Stage                  string      `json:"stage"`
+	Command                string      `json:"command"`
+	NextCommand            string      `json:"nextCommand,omitempty"`
+	StatusMessage          string      `json:"statusMessage,omitempty"`
+	StageTimeLeftUS        int64       `json:"stageTimeLeftUs,omitempty"`
+	ActionTimeRemainingUS  int64       `json:"actionTimeRemainingUs,omitempty"`
+	BlueTeamOnPositiveHalf bool        `json:"blueTeamOnPositiveHalf"`
+	DesignatedPosition     *Vector2    `json:"designatedPosition,omitempty"`
+	Blue                   RefereeTeam `json:"blue"`
+	Yellow                 RefereeTeam `json:"yellow"`
 }
 
 type RefereeTeam struct {
@@ -190,4 +191,5 @@ type commandInput struct {
 	Orientation     *uint32  `json:"orientation,omitempty"`
 	KickOrientation *uint32  `json:"kickOrientation,omitempty"`
 	KickSpeed       *uint32  `json:"kickSpeed,omitempty"`
+	EnemyId         *uint32  `json:"enemyId,omitempty"`
 }

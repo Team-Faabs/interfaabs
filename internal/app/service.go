@@ -802,6 +802,9 @@ func buildRobotCommands(robotIDs []uint32, input commandInput) ([]*crashpilot_in
 		if input.KickSpeed != nil {
 			cmd.KickSpeed = uint32Ptr(*input.KickSpeed)
 		}
+		if input.EnemyId != nil {
+			cmd.EnemyId = uint32Ptr(*input.EnemyId)
+		}
 
 		commands = append(commands, &crashpilot_interface.InterfaceRobotCommands_CP{
 			RobotId: uint32Ptr(robotID),
@@ -833,6 +836,9 @@ func mapCommandView(cmd *crashpilot_interface.CP_Command) CommandView {
 	}
 	if cmd.KickSpeed != nil {
 		view.KickSpeed = uint32Ptr(cmd.GetKickSpeed())
+	}
+	if cmd.EnemyId != nil {
+		view.EnemyId = uint32Ptr(cmd.GetEnemyId())
 	}
 	return view
 }

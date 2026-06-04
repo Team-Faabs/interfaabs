@@ -17,6 +17,7 @@ const TASK_OPTIONS = [
   'TASK_STEAL',
   'TASK_DRIBBLE',
   'TASK_PosBall',
+  'TASK_BLOCK',
   'STATE_KICKOFF',
   'STATE_FREEKICK',
 ]
@@ -30,6 +31,7 @@ const INITIAL_COMMAND = {
   orientation: '',
   kickOrientation: '',
   kickSpeed: '',
+  enemyId: '',
 }
 
 const EMPTY_SNAPSHOT = {
@@ -361,10 +363,14 @@ export default function App() {
               <span>Kick speed</span>
               <input type="number" value={command.kickSpeed} onChange={(event) => setCommand((current) => ({ ...current, kickSpeed: event.target.value }))} />
             </label>
+            <label>
+              <span>Enemy ID</span>
+              <input type="number" value={command.enemyId} onChange={(event) => setCommand((current) => ({ ...current, enemyId: event.target.value }))} />
+            </label>
           </div>
 
           <div className="preview-row">
-            <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}</span>
+            <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}{command.enemyId ? ` · Enemy ${command.enemyId}` : ''}</span>
             <button className="action primary" onClick={sendCommand}>Send</button>
           </div>
         </section>
@@ -441,6 +447,7 @@ export default function App() {
                       <span>Age: {item.ageMs}ms</span>
                       <span>Target: {item.command.position ? `${Math.round(item.command.position.x)}, ${Math.round(item.command.position.y)}` : '—'}</span>
                       <span>Kick: {item.command.kickOrientation ?? '—'} / {item.command.kickSpeed ?? '—'}</span>
+                      <span>Enemy: {item.command.enemyId ?? '—'}</span>
                     </div>
                   </article>
                 ))}
@@ -477,228 +484,6 @@ export default function App() {
     </div>
   )
 }
-
-function FieldView({ field, balls, robots, kickedBall, selectedTarget, selectedRobotIds, flipX, flipY, testfield, onPickPosition, onToggleRobot }) {
-  const padding = 760
-  const width = field.lengthMm + padding * 2
-  const height = field.widthMm + padding * 2
-  const viewBox = `${-field.lengthMm / 2 - padding} ${-field.widthMm / 2 - padding} ${width} ${height}`
-  const penaltyX = field.lengthMm / 2 - field.penaltyAreaDepthMm
-  const goalDepth = field.goalDepthMm
-  const robotRadius = Math.max(field.maxRobotRadiusMm || 90, 85)
-  const ballRadius = Math.max(field.ballRadiusMm || 22, 22)
-  const halfL = field.lengthMm / 2
-  const halfW = field.widthMm / 2
-  const labelOffset = 280
-  const tickLabelOffset = 460
-  const sx = flipX ? -1 : 1
-  const sy = flipY ? -1 : 1
-
-  function handleFieldClick(event) {
-    const svg = event.currentTarget
-    const point = svg.createSVGPoint()
-    point.x = event.clientX
-    point.y = event.clientY
-    const transformed = point.matrixTransform(svg.getScreenCTM().inverse())
-    const fieldX = transformed.x * sx
-    const fieldY = transformed.y * sy
-    const clampedX = clamp(fieldX, -halfL, halfL)
-    const clampedY = clamp(fieldY, -halfW, halfW)
-    onPickPosition({ x: clampedX, y: clampedY })
-  }
-
-  return (
-    <div className="field-shell">
-      <svg className="field-svg clickable" viewBox={viewBox} aria-label="Soccer field view" onClick={handleFieldClick}>
-        <defs>
-          <marker id="target-arrow" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto">
-            <path d="M 0 0 L 16 8 L 0 16 z" fill="rgba(177, 126, 255, 0.9)" />
-          </marker>
-          <marker id="kick-arrow" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto">
-            <path d="M 0 0 L 16 8 L 0 16 z" fill="rgba(107, 255, 214, 0.95)" />
-          </marker>
-        </defs>
-
-        <g transform={`scale(${sx} ${sy})`}>
-          <rect
-            x={-halfL - field.boundaryWidthMm}
-            y={-halfW - field.boundaryWidthMm}
-            width={field.lengthMm + field.boundaryWidthMm * 2}
-            height={field.widthMm + field.boundaryWidthMm * 2}
-            className="field-boundary"
-            rx="120"
-          />
-          <rect x={-halfL} y={-halfW} width={field.lengthMm} height={field.widthMm} className="field-outline" rx="20" />
-          <line x1={0} y1={-halfW} x2={0} y2={halfW} className="field-line" />
-          <circle cx={0} cy={0} r={field.centerCircleMm} className="field-line" />
-          <circle cx={0} cy={0} r={20} className="field-dot" />
-          <rect x={-halfL} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
-          <rect x={penaltyX} y={-field.penaltyAreaWidthMm / 2} width={field.penaltyAreaDepthMm} height={field.penaltyAreaWidthMm} className="field-line" />
-          <rect x={-halfL - goalDepth} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box left" />
-          <rect x={halfL} y={-field.goalWidthMm / 2} width={goalDepth} height={field.goalWidthMm} className="goal-box right" />
-
-          {testfield != null ? (() => {
-            const quadrants = {
-              0: { x: -halfL, y: 0,       label: '−X +Y' },
-              1: { x: 0,      y: 0,       label: '+X +Y' },
-              2: { x: 0,      y: -halfW,  label: '+X −Y' },
-              3: { x: -halfL, y: -halfW,  label: '−X −Y' },
-            }
-            const q = quadrants[testfield]
-            if (!q) return null
-            return (
-              <g className="testfield-overlay">
-                <rect x={q.x} y={q.y} width={halfL} height={halfW} className="testfield-rect" />
-                <g transform={`translate(${q.x + halfL / 2} ${q.y + halfW / 2}) scale(${sx} ${sy})`}>
-                  <text x={0} y={-40} className="testfield-label">TESTFIELD</text>
-                  <text x={0} y={140} className="testfield-sublabel">Q{testfield} · {q.label}</text>
-                </g>
-              </g>
-            )
-          })() : null}
-
-          {balls.map((ball, index) => (
-            <g key={`ball-${index}`}>
-              <circle cx={ball.x} cy={ball.y} r={ballRadius * 2} className="ball-glow" />
-              <circle cx={ball.x} cy={ball.y} r={ballRadius} className="ball-dot" />
-            </g>
-          ))}
-
-          {kickedBall ? (
-            <line x1={kickedBall.x} y1={kickedBall.y} x2={kickedBall.stopX || kickedBall.x} y2={kickedBall.stopY || kickedBall.y} className="kicked-ball-line" />
-          ) : null}
-
-          {selectedTarget ? (
-            <g>
-              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.9} className="picked-target-ring" />
-              <circle cx={selectedTarget.x} cy={selectedTarget.y} r={robotRadius * 0.28} className="picked-target-dot" />
-            </g>
-          ) : null}
-
-          {robots.map((robot) => {
-            const radius = robotRadius
-            const isSelected = selectedRobotIds.includes(robot.id)
-            const teamClass = robot.team === 'blue' ? 'robot blue' : robot.team === 'yellow' ? 'robot yellow' : 'robot neutral'
-            const command = robot.cpCommand?.command
-            const self = robot.cpCommand?.self
-            const originX = self?.x ?? robot.x
-            const originY = self?.y ?? robot.y
-            const kickArrow = command?.kickOrientation != null
-            const kickLength = 320
-            const kickAngle = kickArrow ? degreesToRadians(command.kickOrientation) : null
-            const orientation = robot.orientation || 0
-            const bodyPath = robotBodyPath(radius, orientation)
-            const labelTransform = `scale(${sx} ${sy})`
-            return (
-              <g key={`${robot.team}-${robot.id}-${robot.x}-${robot.y}`} className="robot-group" onClick={(event) => { event.stopPropagation(); onToggleRobot(robot.id) }}>
-                {command?.position ? (
-                  <line x1={originX} y1={originY} x2={command.position.x} y2={command.position.y} className="command-line" markerEnd="url(#target-arrow)" />
-                ) : null}
-                {kickArrow ? (
-                  <line
-                    x1={originX}
-                    y1={originY}
-                    x2={originX + Math.cos(kickAngle) * kickLength}
-                    y2={originY + Math.sin(kickAngle) * kickLength}
-                    className="kick-line"
-                    markerEnd="url(#kick-arrow)"
-                  />
-                ) : null}
-                <g transform={`translate(${robot.x} ${robot.y})`}>
-                  {isSelected ? (
-                    <circle cx={0} cy={0} r={radius * 1.55} className="robot-select-ring" />
-                  ) : null}
-                  <path d={bodyPath} className={teamClass} />
-                  <text x={0} y={28} className="robot-label" transform={labelTransform}>{robot.id}</text>
-                </g>
-              </g>
-            )
-          })}
-        </g>
-
-        {/* axis labels (outside flipped group so text reads correctly; positions follow flips) */}
-        <g className="axis-labels">
-          <text x={sx * (halfL + tickLabelOffset)} y={0} className="axis-label">+X</text>
-          <text x={-sx * (halfL + tickLabelOffset)} y={0} className="axis-label">−X</text>
-          <text x={0} y={sy * (halfW + tickLabelOffset)} className="axis-label">+Y</text>
-          <text x={0} y={-sy * (halfW + tickLabelOffset) + 20} className="axis-label">−Y</text>
-        </g>
-
-        {/* angle ticks: 0° → +X, 90° → +Y, 180° → −X, 270° → −Y */}
-        <g className="angle-labels">
-          <text x={sx * (halfL + labelOffset)} y={120} className="angle-label">0°</text>
-          <text x={-80} y={sy * (halfW + labelOffset)} className="angle-label">90°</text>
-          <text x={-sx * (halfL + labelOffset)} y={120} className="angle-label">180°</text>
-          <text x={-80} y={-sy * (halfW + labelOffset) + 20} className="angle-label">270°</text>
-        </g>
-
-        {/* compass in lower-left, fixed orientation */}
-        <g className="compass" transform={`translate(${-halfL - 540}, ${halfW + 360})`}>
-          <circle cx={0} cy={0} r={140} className="compass-bg" />
-          <line x1={-110} y1={0} x2={sx * 110} y2={0} className="compass-axis" markerEnd="url(#target-arrow)" />
-          <line x1={0} y1={-110} x2={0} y2={sy * 110} className="compass-axis" markerEnd="url(#target-arrow)" />
-          <text x={sx * 150} y={20} className="compass-text">X</text>
-          <text x={-10} y={sy * 180} className="compass-text">Y</text>
-        </g>
-      </svg>
-    </div>
-  )
-}
-
-function robotBodyPath(radius, orientation) {
-  // SSL-style robot body drawn around (0,0): circle with a flat face on the kicker side.
-  const notch = 0.55 // half-angle of the flat face in radians
-  const a1 = orientation + notch
-  const a2 = orientation - notch
-  const x1 = Math.cos(a1) * radius
-  const y1 = Math.sin(a1) * radius
-  const x2 = Math.cos(a2) * radius
-  const y2 = Math.sin(a2) * radius
-  return `M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2} Z`
-}
-
-function ToggleCard({ label, description, checked, onChange }) {
-  return (
-    <label className="toggle-card">
-      <div>
-        <strong>{label}</strong>
-        <p>{description}</p>
-      </div>
-      <span className={`toggle-switch ${checked ? 'checked' : ''}`}>
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-        <span />
-      </span>
-    </label>
-  )
-}
-
-function StatusPill({ label, value, tone }) {
-  return (
-    <div className={`status-pill ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-
-function LegendChip({ label, tone }) {
-  return (
-    <span className={`legend-chip ${tone}`}>
-      <i />
-      {label}
-    </span>
-  )
-}
-
-function InfoRow({ label, value }) {
-  return (
-    <div className="info-row">
-      <span>{label}</span>
-      <strong>{String(value)}</strong>
-    </div>
-  )
-}
-
 function buildCommandPayload(command) {
   const payload = {
     state: command.state,
@@ -710,11 +495,13 @@ function buildCommandPayload(command) {
   const orientation = parseOptionalNumber(command.orientation)
   const kickOrientation = parseOptionalNumber(command.kickOrientation)
   const kickSpeed = parseOptionalNumber(command.kickSpeed)
+  const enemyId = parseOptionalNumber(command.enemyId)
 
   if (speed != null) payload.speed = speed
   if (orientation != null) payload.orientation = orientation
   if (kickOrientation != null) payload.kickOrientation = kickOrientation
   if (kickSpeed != null) payload.kickSpeed = kickSpeed
+  if (enemyId != null) payload.enemyId = enemyId
 
   return payload
 }
@@ -753,15 +540,6 @@ function formatTimestamp(value) {
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleTimeString()
 }
-
-function degreesToRadians(value) {
-  return (Number(value) * Math.PI) / 180
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max)
-}
-
 function useLocalStorage(key, initial) {
   const [value, setValue] = useState(() => {
     try {
