@@ -94,6 +94,7 @@ const EMPTY_SNAPSHOT = {
       gcData: true,
     },
     game: {
+      running: false,
       side: false,
       teamColor: false,
       goalkeeperId: 0,
@@ -250,6 +251,15 @@ export default function App() {
     sendMessage({ type: 'set_options', options: optionsDraft })
   }
 
+  function toggleGameRunning() {
+    const next = {
+      ...optionsDraft,
+      game: { ...optionsDraft.game, running: !optionsDraft.game.running },
+    }
+    setOptionsDraft(next)
+    sendMessage({ type: 'set_options', options: next })
+  }
+
   const setMode = (mode) => setOptionsDraft((current) => ({ ...current, mode }))
   const setManual = (patch) => setOptionsDraft((current) => ({ ...current, manual: { ...current.manual, ...patch } }))
   const setGame = (patch) => setOptionsDraft((current) => ({ ...current, game: { ...current.game, ...patch } }))
@@ -374,7 +384,7 @@ export default function App() {
           </div>
 
           {builderTab === 'gamemode' ? (
-            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChangeGame={setGame} onApply={submitOptions} />
+            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChangeGame={setGame} onApply={submitOptions} onToggleRunning={toggleGameRunning} />
           ) : builderTab === 'testmode' ? (
             <TestModePanel
               options={optionsDraft}
@@ -781,7 +791,7 @@ function ToggleCard({ label, description, checked, onChange }) {
   )
 }
 
-function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
+function GameModePanel({ options, goalieIds, onChangeGame, onApply, onToggleRunning }) {
   const game = options.game
   const active = options.mode === 'MODE_GAME'
   const goalieOnTeam = goalieIds.includes(game.goalkeeperId)
@@ -792,6 +802,17 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply }) {
           ? 'Game mode is active — CrashPilot is driving.'
           : 'Set the active mode to Game in Global Options to hand over control.'}
       </p>
+      <div className="gamemode-run">
+        <span className={`gamemode-pill ${game.running ? 'on' : ''}`}>
+          {game.running ? 'Running' : 'Stopped'}
+        </span>
+        <button
+          className={`action ${game.running ? 'danger' : 'secondary'}`}
+          onClick={onToggleRunning}
+        >
+          {game.running ? 'Stop game' : 'Start game'}
+        </button>
+      </div>
       <div className="form-grid">
         <label>
           <span>Team color</span>

@@ -20,6 +20,8 @@ ball_tracked = true
 gc_data = false
 
 [interface_defaults.game]
+# Whether the game is running: true to start, false to stop
+running = false
 # Field side: false for x+, true for x-
 side = false
 # Team color: false for Yellow, true for Blue

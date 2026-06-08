@@ -136,6 +136,7 @@ type ManualOptions struct {
 }
 
 type GameOptions struct {
+	Running      bool   `json:"running"`
 	Side         bool   `json:"side"`
 	TeamColor    bool   `json:"teamColor"`
 	GoalkeeperID uint32 `json:"goalkeeperId"`

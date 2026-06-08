@@ -70,6 +70,7 @@ func New(cfg config.Config) (*Service, error) {
 					GCData:          cfg.InterfaceDefaults.Manual.GCData,
 				},
 				Game: GameOptions{
+					Running:      cfg.InterfaceDefaults.Game.Running,
 					Side:         cfg.InterfaceDefaults.Game.Side,
 					TeamColor:    cfg.InterfaceDefaults.Game.TeamColor,
 					GoalkeeperID: cfg.InterfaceDefaults.Game.Goalkeeper,
@@ -272,6 +273,7 @@ func (s *Service) sendInterfaceMessage(commands []*crashpilot_interface.Interfac
 				GcData:          boolPtr(options.Manual.GCData),
 			},
 			Game: &crashpilot_interface.InterfaceGame_CP{
+				Running:      boolPtr(options.Game.Running),
 				Side:         boolPtr(options.Game.Side),
 				TeamColor:    boolPtr(options.Game.TeamColor),
 				GoalkeeperId: uint32Ptr(options.Game.GoalkeeperID),

@@ -40,6 +40,7 @@ type ManualDefaultsConfig struct {
 }
 
 type GameDefaultsConfig struct {
+	Running    bool   `toml:"running"`
 	Side       bool   `toml:"side"`
 	TeamColor  bool   `toml:"team_color"`
 	Goalkeeper uint32 `toml:"goalkeeper_id"`
@@ -86,6 +87,7 @@ func Default() Config {
 				GCData:          true,
 			},
 			Game: GameDefaultsConfig{
+				Running:    false,
 				Side:       false,
 				TeamColor:  false,
 				Goalkeeper: 0,

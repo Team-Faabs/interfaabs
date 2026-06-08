@@ -418,6 +418,15 @@ h2 {
 
 .gamemode-hint { margin: 0; line-height: 1.35; }
 
+.gamemode-run {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gamemode-run .action { flex: 0 0 auto; }
+
 .form-grid .span-2 { grid-column: 1 / -1; }
 
 .manual-options {
