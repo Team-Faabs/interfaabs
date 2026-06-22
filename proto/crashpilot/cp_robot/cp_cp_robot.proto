@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 message CP_Robot {
   // Some fields to check stuff, drop all packets that are really late (for now 400ms) and the packet id should also be newer than the last one
   required uint32 robot_id = 1;
-  required google.protobuf.Timestamp timestamp = 2;
+  required double timestamp = 2;
   required uint32 packet_id = 3;
 
   // the ball data,

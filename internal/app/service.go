@@ -686,10 +686,15 @@ func mapRobotCommands(commands []*crashpilot_interface.CP_Robot, receivedAt time
 		cmdView := mapCommandView(command.GetCmd())
 		timestamp := ""
 		ageMS := int64(0)
-		if command.GetTimestamp() != nil {
-			commandTime := command.GetTimestamp().AsTime().UTC()
-			timestamp = commandTime.Format(time.RFC3339Nano)
-			ageMS = receivedAt.Sub(commandTime).Milliseconds()
+		if command.GetTimestamp() != 0.0 {
+			sec := int64(command.GetTimestamp())
+			nsec := int64((command.GetTimestamp() - math.Floor(command.GetTimestamp())) * 1e9)
+
+			t := time.Unix(sec, nsec).UTC()
+
+			// commandTime := command.GetTimestamp().AsTime().UTC()
+			timestamp = t.Format(time.RFC3339Nano)
+			ageMS = receivedAt.Sub(t).Milliseconds()
 		}
 		items = append(items, RobotCommand{
 			RobotID:      command.GetRobotId(),
