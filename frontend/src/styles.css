@@ -479,6 +479,14 @@ h2 {
 
 .robot-chip:hover { transform: translateY(-1px); }
 
+.robot-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.robot-chip:disabled:hover { transform: none; }
+
 .robot-chip.selected {
   background: linear-gradient(135deg, rgba(92, 115, 255, 0.4), rgba(154, 91, 255, 0.38));
   border-color: rgba(156, 175, 255, 0.55);

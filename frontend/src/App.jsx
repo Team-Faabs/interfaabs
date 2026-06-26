@@ -36,6 +36,9 @@ const TEST_OPTIONS = [
   { value: 'TEST_BALL_CONTROL', label: 'Ball control' },
   { value: 'TEST_DRIBBLER', label: 'Dribbler' },
   { value: 'TEST_KICKER', label: 'Kicker' },
+  { value: 'MODE_GOAL_SHOOT', label: 'Goal shoot', robotLimit: 1 },
+  { value: 'MODE_GOALIE', label: 'Goalie', robotLimit: 1 },
+  { value: 'MODE_GOALIE_AND_SHOOT', label: 'Goalie and shoot', robotLimit: 2 },
 ]
 
 const INITIAL_COMMAND = {
@@ -248,7 +251,9 @@ export default function App() {
   }
 
   function submitOptions() {
-    sendMessage({ type: 'set_options', options: optionsDraft })
+    const options = normalizeInterfaceOptions(optionsDraft)
+    setOptionsDraft(options)
+    sendMessage({ type: 'set_options', options })
   }
 
   function toggleGameRunning() {
@@ -256,8 +261,9 @@ export default function App() {
       ...optionsDraft,
       game: { ...optionsDraft.game, running: !optionsDraft.game.running },
     }
-    setOptionsDraft(next)
-    sendMessage({ type: 'set_options', options: next })
+    const options = normalizeInterfaceOptions(next)
+    setOptionsDraft(options)
+    sendMessage({ type: 'set_options', options })
   }
 
   const setMode = (mode) => setOptionsDraft((current) => ({ ...current, mode }))
@@ -866,15 +872,23 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply, onToggleRunn
 function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
   const test = options.test
   const active = options.mode === 'MODE_TEST'
-  const selected = test.robotIds || []
+  const testOption = TEST_OPTIONS.find((option) => option.value === test.test)
+  const robotLimit = testOption?.robotLimit ?? null
+  const selected = limitTestRobotIds(test.test, test.robotIds || [])
+  const selectionFull = robotLimit != null && selected.length >= robotLimit
+  const robotLabel = robotLimit ? `Robots (${selected.length}/${robotLimit})` : 'Robots'
+  const changeTest = (nextTest) => {
+    onChangeTest({ test: nextTest, robotIds: limitTestRobotIds(nextTest, selected) })
+  }
   const toggleRobot = (robotId) => {
+    const nextSelected = selected.includes(robotId)
+      ? selected.filter((id) => id !== robotId)
+      : addRobotSelection(selected, robotId, robotLimit)
     onChangeTest({
-      robotIds: selected.includes(robotId)
-        ? selected.filter((id) => id !== robotId)
-        : [...selected, robotId].sort((a, b) => a - b),
+      robotIds: nextSelected,
     })
   }
-  const testLabel = TEST_OPTIONS.find((option) => option.value === test.test)?.label ?? 'None'
+  const testLabel = testOption?.label ?? 'None'
   return (
     <div className="gamemode-panel">
       <p className="muted small gamemode-hint">
@@ -885,7 +899,7 @@ function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
       <div className="form-grid">
         <label className="span-2">
           <span>Test</span>
-          <select value={test.test} onChange={(event) => onChangeTest({ test: event.target.value })}>
+          <select value={test.test} onChange={(event) => changeTest(event.target.value)}>
             {TEST_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
@@ -893,13 +907,14 @@ function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
         </label>
       </div>
       <div className="test-robots">
-        <span className="mode-label">Robots</span>
+        <span className="mode-label">{robotLabel}</span>
         <div className="robot-selector">
           {knownRobotIds.length === 0 ? <p className="muted small">Waiting for robot ids.</p> : null}
           {knownRobotIds.map((robotId) => (
             <button
               key={robotId}
               className={`robot-chip ${selected.includes(robotId) ? 'selected' : ''}`}
+              disabled={selectionFull && !selected.includes(robotId)}
               onClick={() => toggleRobot(robotId)}
             >
               {robotId}
@@ -915,6 +930,35 @@ function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
       </div>
     </div>
   )
+}
+
+function normalizeInterfaceOptions(options) {
+  return {
+    ...options,
+    test: {
+      ...options.test,
+      robotIds: limitTestRobotIds(options.test.test, options.test.robotIds || []),
+    },
+  }
+}
+
+function addRobotSelection(selected, robotId, limit) {
+  if (limit === 1) {
+    return [robotId]
+  }
+
+  if (limit && selected.length >= limit) {
+    return selected
+  }
+
+  const next = [...selected, robotId].sort((a, b) => a - b)
+  return limit ? next.slice(0, limit) : next
+}
+
+function limitTestRobotIds(testName, robotIds) {
+  const limit = TEST_OPTIONS.find((option) => option.value === testName)?.robotLimit
+  if (!limit) return [...robotIds]
+  return robotIds.slice(0, limit)
 }
 
 function StatusPill({ label, value, tone }) {

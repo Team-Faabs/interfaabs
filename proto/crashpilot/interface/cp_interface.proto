@@ -74,6 +74,9 @@ enum CPTests {
   TEST_BALL_CONTROL = 1;
   TEST_DRIBBLER = 2;
   TEST_KICKER = 3;
+  MODE_GOAL_SHOOT = 4;
+  MODE_GOALIE = 5;
+  MODE_GOALIE_AND_SHOOT = 6;
 }
 
 enum CpMode {

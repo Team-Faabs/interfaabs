@@ -86,6 +86,8 @@ func New(cfg config.Config) (*Service, error) {
 		},
 	}
 
+	service.snapshot.InterfaceOptions = normalizeInterfaceOptions(service.snapshot.InterfaceOptions)
+
 	return service, nil
 }
 
@@ -314,6 +316,7 @@ func (s *Service) sendInterfaceMessage(commands []*crashpilot_interface.Interfac
 }
 
 func (s *Service) setInterfaceOptions(options InterfaceOptions) {
+	options = normalizeInterfaceOptions(options)
 	now := time.Now().UTC()
 	s.mu.Lock()
 	s.snapshot.InterfaceOptions = options
@@ -321,6 +324,30 @@ func (s *Service) setInterfaceOptions(options InterfaceOptions) {
 	s.snapshot.UpdatedAt = now
 	s.mu.Unlock()
 	s.broadcastSnapshot()
+}
+
+func normalizeInterfaceOptions(options InterfaceOptions) InterfaceOptions {
+	options.Test.RobotIDs = limitTestRobotIDs(options.Test.Test, options.Test.RobotIDs)
+	return options
+}
+
+func limitTestRobotIDs(test string, robotIDs []uint32) []uint32 {
+	limit := testRobotLimit(test)
+	if limit <= 0 || len(robotIDs) <= limit {
+		return robotIDs
+	}
+	return append([]uint32(nil), robotIDs[:limit]...)
+}
+
+func testRobotLimit(test string) int {
+	switch test {
+	case "MODE_GOAL_SHOOT", "MODE_GOALIE":
+		return 1
+	case "MODE_GOALIE_AND_SHOOT":
+		return 2
+	default:
+		return 0
+	}
 }
 
 func (s *Service) readControllerMessages(ctx context.Context, conn *websocket.Conn) error {
