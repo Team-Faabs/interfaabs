@@ -427,6 +427,16 @@ h2 {
 
 .gamemode-run .action { flex: 0 0 auto; }
 
+.gamephase-status {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+}
+
+.gamephase-status .info-row {
+  min-height: 36px;
+}
+
 .form-grid .span-2 { grid-column: 1 / -1; }
 
 .manual-options {

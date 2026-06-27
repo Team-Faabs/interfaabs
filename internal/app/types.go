@@ -9,6 +9,7 @@ type Snapshot struct {
 	Vision           VisionState      `json:"vision"`
 	RobotCommands    []RobotCommand   `json:"robotCommands"`
 	InterfaceOptions InterfaceOptions `json:"interfaceOptions"`
+	GamePhase        *GamePhaseState  `json:"gamePhase,omitempty"`
 	Referee          *RefereeState    `json:"referee,omitempty"`
 	KnownRobotIDs    []uint32         `json:"knownRobotIds"`
 	Debug            DebugState       `json:"debug"`
@@ -146,6 +147,12 @@ type GameOptions struct {
 type TestOptions struct {
 	Test     string   `json:"test"`
 	RobotIDs []uint32 `json:"robotIds"`
+}
+
+type GamePhaseState struct {
+	GamePhase string    `json:"gamePhase,omitempty"`
+	PrepPhase string    `json:"prepPhase,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type RefereeState struct {

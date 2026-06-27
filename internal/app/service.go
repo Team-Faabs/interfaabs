@@ -417,6 +417,12 @@ func (s *Service) applyControllerSnapshot(wrapper *crashpilot_interface.CP_Inter
 		}
 	}
 
+	if cpGamePhase := wrapper.GetCpGamephase(); cpGamePhase != nil {
+		state := mapGamePhase(cpGamePhase, now)
+		s.snapshot.GamePhase = &state
+		s.snapshot.Debug.LastEvent = "received game phase update"
+	}
+
 	if commands := wrapper.GetRobotCommands(); len(commands) > 0 {
 		s.snapshot.Debug.CommandFrames++
 		s.snapshot.RobotCommands = mapRobotCommands(commands, now)
@@ -760,6 +766,20 @@ func mapReferee(gc *crashpilot_interface.Referee) RefereeState {
 	}
 	if gc.GetDesignatedPosition() != nil {
 		state.DesignatedPosition = &Vector2{X: float64(gc.GetDesignatedPosition().GetX()), Y: float64(gc.GetDesignatedPosition().GetY())}
+	}
+	return state
+}
+
+func mapGamePhase(cpGamePhase *crashpilot_interface.CP_GamePhase, updatedAt time.Time) GamePhaseState {
+	state := GamePhaseState{UpdatedAt: updatedAt}
+	if cpGamePhase == nil {
+		return state
+	}
+	if cpGamePhase.GamePhase != nil {
+		state.GamePhase = cpGamePhase.GetGamePhase().String()
+	}
+	if cpGamePhase.PrepPhase != nil {
+		state.PrepPhase = cpGamePhase.GetPrepPhase().String()
 	}
 	return state
 }

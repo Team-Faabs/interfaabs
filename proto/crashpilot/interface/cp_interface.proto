@@ -15,6 +15,36 @@ message CP_InterfaceWrapper {
   optional Referee gc_data = 3;
 
   repeated CP_Robot robot_commands = 4;
+
+  optional CP_GamePhase cp_gamephase = 5;
+}
+
+message CP_GamePhase {
+  enum GamePhase {
+    UNKNOWN_GamePhase = 0;
+
+    Halted = 1;
+    Stopped = 2;
+
+    Running = 3;
+    Timeout = 4;
+    BallPlacement = 5;
+  }
+  enum PrepPhase {
+    UNKNOWN_PrepPhase = 0;
+
+    OffensiveKickoff = 1;
+    DefensiveKickoff = 2;
+
+    OffensivePenalty = 3;
+    DefensivePenalty = 4;
+
+    OffensiveFreeKick = 5;
+    DefensiveFreeKick = 6;
+  }
+
+  optional GamePhase game_phase = 1;
+  optional PrepPhase prep_phase = 2;
 }
 
 // buf:lint:ignore MESSAGE_PASCAL_CASE

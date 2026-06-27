@@ -108,6 +108,7 @@ const EMPTY_SNAPSHOT = {
       robotIds: [],
     },
   },
+  gamePhase: null,
   referee: null,
   knownRobotIds: [],
   debug: {
@@ -390,7 +391,14 @@ export default function App() {
           </div>
 
           {builderTab === 'gamemode' ? (
-            <GameModePanel options={optionsDraft} goalieIds={teamGoalieIds} onChangeGame={setGame} onApply={submitOptions} onToggleRunning={toggleGameRunning} />
+            <GameModePanel
+              options={optionsDraft}
+              goalieIds={teamGoalieIds}
+              gamePhase={snapshot.gamePhase}
+              onChangeGame={setGame}
+              onApply={submitOptions}
+              onToggleRunning={toggleGameRunning}
+            />
           ) : builderTab === 'testmode' ? (
             <TestModePanel
               options={optionsDraft}
@@ -797,7 +805,7 @@ function ToggleCard({ label, description, checked, onChange }) {
   )
 }
 
-function GameModePanel({ options, goalieIds, onChangeGame, onApply, onToggleRunning }) {
+function GameModePanel({ options, goalieIds, gamePhase, onChangeGame, onApply, onToggleRunning }) {
   const game = options.game
   const active = options.mode === 'MODE_GAME'
   const goalieOnTeam = goalieIds.includes(game.goalkeeperId)
@@ -818,6 +826,11 @@ function GameModePanel({ options, goalieIds, onChangeGame, onApply, onToggleRunn
         >
           {game.running ? 'Stop game' : 'Start game'}
         </button>
+      </div>
+      <div className="gamephase-status">
+        <InfoRow label="Game phase" value={prettyPhase(gamePhase?.gamePhase)} />
+        <InfoRow label="Prep phase" value={prettyPhase(gamePhase?.prepPhase)} />
+        <InfoRow label="Updated" value={formatTimestamp(gamePhase?.updatedAt)} />
       </div>
       <div className="form-grid">
         <label>
@@ -1045,6 +1058,17 @@ function prettySource(source) {
   if (source === 'vision_raw') return 'Raw'
   if (source === 'vision_tracked') return 'Tracked'
   return prettyEnum(source)
+}
+
+function prettyPhase(value) {
+  if (!value) return '—'
+  return String(value)
+    .replace(/^UNKNOWN_/, 'Unknown ')
+    .replaceAll('_', ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function formatTimestamp(value) {
