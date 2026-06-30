@@ -33,6 +33,12 @@ message CP_Command {
 
   optional CP_Vector2 pos = 3;
   optional uint32 speed = 4;
+  // use raw movement
+  optional bool raw = 9;
+  // ???
+  optional bool inwall = 10;
+  // robots to ignore with orca
+  repeated uint32 ignore_robots = 11;
   optional uint32 orientation = 5;
 
   optional uint32 kick_orient = 6;
