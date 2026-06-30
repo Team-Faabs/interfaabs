@@ -162,7 +162,7 @@ CrashPilot Interface uses [Protocol Buffers](https://protobuf.dev/) (proto2) for
 
 ### `CP_Interface` (`proto/crashpilot/interface/cp_interface.proto`)
 
-Top-level message sent from the UI to the backend. Contains a `robot_id` and a `CP_Command`.
+Top-level message sent from the UI to CrashPilot. Contains manual robot commands plus global interface options such as active mode, team color, and field side.
 
 ### `CP_Command` (`proto/crashpilot/cp_robot/cp_cp_robot.proto`)
 
@@ -170,7 +170,7 @@ Describes what a robot should do:
 
 - **`CP_State`** -- the robot's operating mode: `Halt`, `Stop`, `Free`, or `Goalie`.
 - **`CP_Task`** -- the action to perform: `Position`, `Kick`, `Chip`, `ReceiveKick`, `Steal`, `Dribble`, `PositionBall`, `ReceiveBall`, `Kickoff`, `BallPlacement`, or `FreeKick`.
-- Optional fields for target position (`pos`), orientation, and kick orientation.
+- Optional fields for target position (`pos`), speed, raw movement, in-wall behavior, ignored robots, orientation, kick orientation, kick speed, and enemy id.
 
 ### SSL Vision messages (`proto/vision_tracked/`)
 

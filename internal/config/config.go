@@ -26,10 +26,12 @@ type CrashPilotConfig struct {
 }
 
 type InterfaceDefaultsConfig struct {
-	Mode   string               `toml:"mode"`
-	Manual ManualDefaultsConfig `toml:"manual"`
-	Game   GameDefaultsConfig   `toml:"game"`
-	Test   TestDefaultsConfig   `toml:"test"`
+	Mode      string               `toml:"mode"`
+	Side      bool                 `toml:"side"`
+	TeamColor bool                 `toml:"team_color"`
+	Manual    ManualDefaultsConfig `toml:"manual"`
+	Game      GameDefaultsConfig   `toml:"game"`
+	Test      TestDefaultsConfig   `toml:"test"`
 }
 
 type ManualDefaultsConfig struct {
@@ -79,7 +81,9 @@ func Default() Config {
 			WriteTimeoutMS:     2000,
 		},
 		InterfaceDefaults: InterfaceDefaultsConfig{
-			Mode: "MODE_MANUAL",
+			Mode:      "MODE_MANUAL",
+			Side:      false,
+			TeamColor: false,
 			Manual: ManualDefaultsConfig{
 				EnableTestfield: false,
 				Testfield:       0,
@@ -116,8 +120,16 @@ func Default() Config {
 
 func Load(path string) (Config, error) {
 	cfg := Default()
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	metadata, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
+	}
+
+	if !metadata.IsDefined("interface_defaults", "side") && metadata.IsDefined("interface_defaults", "game", "side") {
+		cfg.InterfaceDefaults.Side = cfg.InterfaceDefaults.Game.Side
+	}
+	if !metadata.IsDefined("interface_defaults", "team_color") && metadata.IsDefined("interface_defaults", "game", "team_color") {
+		cfg.InterfaceDefaults.TeamColor = cfg.InterfaceDefaults.Game.TeamColor
 	}
 
 	if cfg.Server.Host == "" {

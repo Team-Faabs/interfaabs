@@ -111,6 +111,9 @@ type CommandView struct {
 	Task            string   `json:"task"`
 	Position        *Vector2 `json:"position,omitempty"`
 	Speed           *uint32  `json:"speed,omitempty"`
+	Raw             *bool    `json:"raw,omitempty"`
+	Inwall          *bool    `json:"inwall,omitempty"`
+	IgnoreRobots    []uint32 `json:"ignoreRobots,omitempty"`
 	Orientation     *uint32  `json:"orientation,omitempty"`
 	KickOrientation *uint32  `json:"kickOrientation,omitempty"`
 	KickSpeed       *uint32  `json:"kickSpeed,omitempty"`
@@ -123,10 +126,12 @@ type Vector2 struct {
 }
 
 type InterfaceOptions struct {
-	Mode   string        `json:"mode"`
-	Manual ManualOptions `json:"manual"`
-	Game   GameOptions   `json:"game"`
-	Test   TestOptions   `json:"test"`
+	Mode      string        `json:"mode"`
+	Side      bool          `json:"side"`
+	TeamColor bool          `json:"teamColor"`
+	Manual    ManualOptions `json:"manual"`
+	Game      GameOptions   `json:"game"`
+	Test      TestOptions   `json:"test"`
 }
 
 type ManualOptions struct {
@@ -138,8 +143,6 @@ type ManualOptions struct {
 
 type GameOptions struct {
 	Running      bool   `json:"running"`
-	Side         bool   `json:"side"`
-	TeamColor    bool   `json:"teamColor"`
 	GoalkeeperID uint32 `json:"goalkeeperId"`
 	MaxSpeed     uint32 `json:"maxSpeed"`
 }
@@ -215,6 +218,9 @@ type commandInput struct {
 	Task            string   `json:"task"`
 	Position        *Vector2 `json:"position,omitempty"`
 	Speed           *uint32  `json:"speed,omitempty"`
+	Raw             *bool    `json:"raw,omitempty"`
+	Inwall          *bool    `json:"inwall,omitempty"`
+	IgnoreRobots    []uint32 `json:"ignoreRobots,omitempty"`
 	Orientation     *uint32  `json:"orientation,omitempty"`
 	KickOrientation *uint32  `json:"kickOrientation,omitempty"`
 	KickSpeed       *uint32  `json:"kickSpeed,omitempty"`

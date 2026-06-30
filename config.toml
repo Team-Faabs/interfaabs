@@ -12,6 +12,10 @@ write_timeout_ms = 2000
 [interface_defaults]
 # Active mode CrashPilot should run: MODE_MANUAL, MODE_GAME or MODE_TEST
 mode = "MODE_MANUAL"
+# Field side: false for x+, true for x-
+side = false
+# Team color: false for Yellow, true for Blue
+team_color = false
 
 [interface_defaults.manual]
 enable_testfield = false
@@ -22,10 +26,6 @@ gc_data = false
 [interface_defaults.game]
 # Whether the game is running: true to start, false to stop
 running = false
-# Field side: false for x+, true for x-
-side = false
-# Team color: false for Yellow, true for Blue
-team_color = false
 # Robot id that should act as goalkeeper
 goalkeeper_id = 0
 # Max speed for the game in mm/s, 0 for unlimited

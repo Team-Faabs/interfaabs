@@ -47,6 +47,9 @@ const INITIAL_COMMAND = {
   positionX: 0,
   positionY: 0,
   speed: '',
+  raw: false,
+  inwall: false,
+  ignoreRobots: '',
   orientation: '',
   kickOrientation: '',
   kickSpeed: '',
@@ -90,6 +93,8 @@ const EMPTY_SNAPSHOT = {
   robotCommands: [],
   interfaceOptions: {
     mode: 'MODE_MANUAL',
+    side: false,
+    teamColor: false,
     manual: {
       enableTestfield: false,
       testfield: 0,
@@ -98,8 +103,6 @@ const EMPTY_SNAPSHOT = {
     },
     game: {
       running: false,
-      side: false,
-      teamColor: false,
       goalkeeperId: 0,
       maxSpeed: 0,
     },
@@ -210,10 +213,10 @@ export default function App() {
     }))
   }, [snapshot.robotCommands, snapshot.vision.robots])
   const teamGoalieIds = useMemo(() => {
-    const team = optionsDraft.game.teamColor ? 'blue' : 'yellow'
+    const team = optionsDraft.teamColor ? 'blue' : 'yellow'
     const ids = snapshot.vision.robots.filter((robot) => robot.team === team).map((robot) => robot.id)
     return [...new Set(ids)].sort((a, b) => a - b)
-  }, [snapshot.vision.robots, optionsDraft.game.teamColor])
+  }, [snapshot.vision.robots, optionsDraft.teamColor])
 
   function sendMessage(message) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -268,6 +271,7 @@ export default function App() {
   }
 
   const setMode = (mode) => setOptionsDraft((current) => ({ ...current, mode }))
+  const setGlobal = (patch) => setOptionsDraft((current) => ({ ...current, ...patch }))
   const setManual = (patch) => setOptionsDraft((current) => ({ ...current, manual: { ...current.manual, ...patch } }))
   const setGame = (patch) => setOptionsDraft((current) => ({ ...current, game: { ...current.game, ...patch } }))
   const setTest = (patch) => setOptionsDraft((current) => ({ ...current, test: { ...current.test, ...patch } }))
@@ -457,6 +461,10 @@ export default function App() {
               <span>Speed</span>
               <input type="number" value={command.speed} onChange={(event) => setCommand((current) => ({ ...current, speed: event.target.value }))} />
             </label>
+            <label className="span-2">
+              <span>Ignore robots</span>
+              <input value={command.ignoreRobots} onChange={(event) => setCommand((current) => ({ ...current, ignoreRobots: event.target.value }))} placeholder="IDs separated by commas" />
+            </label>
             <label>
               <span>Orient. (°)</span>
               <input type="number" value={command.orientation} onChange={(event) => setCommand((current) => ({ ...current, orientation: event.target.value }))} />
@@ -477,6 +485,18 @@ export default function App() {
 
           <div className="manual-options">
             <ToggleCard
+              label="Raw movement"
+              description="Use raw movement for this command."
+              checked={command.raw}
+              onChange={(checked) => setCommand((current) => ({ ...current, raw: checked }))}
+            />
+            <ToggleCard
+              label="In wall"
+              description="Mark this command as in-wall."
+              checked={command.inwall}
+              onChange={(checked) => setCommand((current) => ({ ...current, inwall: checked }))}
+            />
+            <ToggleCard
               label="GC data"
               description="React to game controller messages."
               checked={optionsDraft.manual.gcData}
@@ -486,7 +506,12 @@ export default function App() {
           </div>
 
           <div className="preview-row">
-            <span className="command-preview">{prettyEnum(command.state)} · {prettyEnum(command.task)}{command.enemyId ? ` · Enemy ${command.enemyId}` : ''}</span>
+            <span className="command-preview">
+              {prettyEnum(command.state)} · {prettyEnum(command.task)}
+              {command.enemyId ? ` · Enemy ${command.enemyId}` : ''}
+              {command.raw ? ' · Raw' : ''}
+              {command.inwall ? ' · In wall' : ''}
+            </span>
             <button className="action primary" onClick={sendCommand}>Send</button>
           </div>
           </>
@@ -526,6 +551,22 @@ export default function App() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="global-settings-grid">
+            <label>
+              <span>Team color</span>
+              <select value={optionsDraft.teamColor ? 'blue' : 'yellow'} onChange={(event) => setGlobal({ teamColor: event.target.value === 'blue' })}>
+                <option value="yellow">Yellow</option>
+                <option value="blue">Blue</option>
+              </select>
+            </label>
+            <label>
+              <span>Field side</span>
+              <select value={optionsDraft.side ? 'minus' : 'plus'} onChange={(event) => setGlobal({ side: event.target.value === 'minus' })}>
+                <option value="plus">Positive (x+)</option>
+                <option value="minus">Negative (x-)</option>
+              </select>
+            </label>
           </div>
           <div className="toggle-grid">
             <ToggleCard
@@ -574,6 +615,9 @@ export default function App() {
                       <span>Target: {item.command.position ? `${Math.round(item.command.position.x)}, ${Math.round(item.command.position.y)}` : '—'}</span>
                       <span>Kick: {item.command.kickOrientation ?? '—'} / {item.command.kickSpeed ?? '—'}</span>
                       <span>Enemy: {item.command.enemyId ?? '—'}</span>
+                      <span>Raw: {item.command.raw == null ? '—' : item.command.raw ? 'yes' : 'no'}</span>
+                      <span>In wall: {item.command.inwall == null ? '—' : item.command.inwall ? 'yes' : 'no'}</span>
+                      <span>Ignore: {item.command.ignoreRobots?.length ? item.command.ignoreRobots.join(', ') : '—'}</span>
                     </div>
                   </article>
                 ))}
@@ -807,6 +851,8 @@ function ToggleCard({ label, description, checked, onChange }) {
 
 function GameModePanel({ options, goalieIds, gamePhase, onChangeGame, onApply, onToggleRunning }) {
   const game = options.game
+  const teamColor = options.teamColor
+  const side = options.side
   const active = options.mode === 'MODE_GAME'
   const goalieOnTeam = goalieIds.includes(game.goalkeeperId)
   return (
@@ -834,21 +880,7 @@ function GameModePanel({ options, goalieIds, gamePhase, onChangeGame, onApply, o
       </div>
       <div className="form-grid">
         <label>
-          <span>Team color</span>
-          <select value={game.teamColor ? 'blue' : 'yellow'} onChange={(event) => onChangeGame({ teamColor: event.target.value === 'blue' })}>
-            <option value="yellow">Yellow</option>
-            <option value="blue">Blue</option>
-          </select>
-        </label>
-        <label>
-          <span>Field side</span>
-          <select value={game.side ? 'minus' : 'plus'} onChange={(event) => onChangeGame({ side: event.target.value === 'minus' })}>
-            <option value="plus">Positive (x+)</option>
-            <option value="minus">Negative (x-)</option>
-          </select>
-        </label>
-        <label>
-          <span>Goalie ({game.teamColor ? 'Blue' : 'Yellow'})</span>
+          <span>Goalie ({teamColor ? 'Blue' : 'Yellow'})</span>
           <select value={game.goalkeeperId} onChange={(event) => onChangeGame({ goalkeeperId: Number(event.target.value) })}>
             {!goalieOnTeam ? (
               <option value={game.goalkeeperId}>
@@ -873,7 +905,7 @@ function GameModePanel({ options, goalieIds, gamePhase, onChangeGame, onApply, o
       <p className="muted small gamemode-hint">Max speed 0 = unlimited.</p>
       <div className="preview-row">
         <span className="command-preview">
-          {game.teamColor ? 'Blue' : 'Yellow'} · {game.side ? 'x-' : 'x+'} · Goalie {game.goalkeeperId} ·{' '}
+          {teamColor ? 'Blue' : 'Yellow'} · {side ? 'x-' : 'x+'} · Goalie {game.goalkeeperId} ·{' '}
           {game.maxSpeed ? `${game.maxSpeed} mm/s` : 'unlimited'}
         </span>
         <button className="action primary" onClick={onApply}>Apply</button>
@@ -946,8 +978,12 @@ function TestModePanel({ options, knownRobotIds, onChangeTest, onApply }) {
 }
 
 function normalizeInterfaceOptions(options) {
+  const side = options.side ?? options.game?.side ?? false
+  const teamColor = options.teamColor ?? options.game?.teamColor ?? false
   return {
     ...options,
+    side,
+    teamColor,
     test: {
       ...options.test,
       robotIds: limitTestRobotIds(options.test.test, options.test.robotIds || []),
@@ -1014,6 +1050,8 @@ function buildCommandPayload(command) {
   const payload = {
     state: command.state,
     task: command.task,
+    raw: Boolean(command.raw),
+    inwall: Boolean(command.inwall),
   }
   payload.position = { x: Number(command.positionX), y: Number(command.positionY) }
 
@@ -1022,12 +1060,14 @@ function buildCommandPayload(command) {
   const kickOrientation = parseOptionalNumber(command.kickOrientation)
   const kickSpeed = parseOptionalNumber(command.kickSpeed)
   const enemyId = parseOptionalNumber(command.enemyId)
+  const ignoreRobots = parseRobotIdList(command.ignoreRobots)
 
   if (speed != null) payload.speed = speed
   if (orientation != null) payload.orientation = orientation
   if (kickOrientation != null) payload.kickOrientation = kickOrientation
   if (kickSpeed != null) payload.kickSpeed = kickSpeed
   if (enemyId != null) payload.enemyId = enemyId
+  if (ignoreRobots.length > 0) payload.ignoreRobots = ignoreRobots
 
   return payload
 }
@@ -1041,6 +1081,15 @@ function parseOptionalNumber(value) {
     return undefined
   }
   return parsed
+}
+
+function parseRobotIdList(value) {
+  if (!value) return []
+  const ids = value
+    .split(/[,\s]+/)
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isInteger(item) && item >= 0)
+  return [...new Set(ids)].sort((a, b) => a - b)
 }
 
 function prettyEnum(value) {

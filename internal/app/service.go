@@ -62,7 +62,9 @@ func New(cfg config.Config) (*Service, error) {
 			Vision:        VisionState{Source: "waiting", SourceLabel: "Waiting for controller data", Balls: []Ball{}, Robots: []Robot{}},
 			RobotCommands: []RobotCommand{},
 			InterfaceOptions: InterfaceOptions{
-				Mode: cfg.InterfaceDefaults.Mode,
+				Mode:      cfg.InterfaceDefaults.Mode,
+				Side:      cfg.InterfaceDefaults.Side,
+				TeamColor: cfg.InterfaceDefaults.TeamColor,
 				Manual: ManualOptions{
 					EnableTestfield: cfg.InterfaceDefaults.Manual.EnableTestfield,
 					Testfield:       cfg.InterfaceDefaults.Manual.Testfield,
@@ -71,8 +73,6 @@ func New(cfg config.Config) (*Service, error) {
 				},
 				Game: GameOptions{
 					Running:      cfg.InterfaceDefaults.Game.Running,
-					Side:         cfg.InterfaceDefaults.Game.Side,
-					TeamColor:    cfg.InterfaceDefaults.Game.TeamColor,
 					GoalkeeperID: cfg.InterfaceDefaults.Game.Goalkeeper,
 					MaxSpeed:     cfg.InterfaceDefaults.Game.MaxSpeed,
 				},
@@ -267,7 +267,9 @@ func (s *Service) sendInterfaceMessage(commands []*crashpilot_interface.Interfac
 	payload, err := proto.Marshal(&crashpilot_interface.InterfaceWrapper_CP{
 		RobotCommands: commands,
 		InterfaceCommand: &crashpilot_interface.InterfaceCommand_CP{
-			Mode: cpModePtr(options.Mode),
+			Mode:      cpModePtr(options.Mode),
+			Side:      boolPtr(options.Side),
+			TeamColor: boolPtr(options.TeamColor),
 			Manual: &crashpilot_interface.InterfaceManual_CP{
 				EnableTestfield: boolPtr(options.Manual.EnableTestfield),
 				Testfield:       uint32Ptr(options.Manual.Testfield),
@@ -276,8 +278,6 @@ func (s *Service) sendInterfaceMessage(commands []*crashpilot_interface.Interfac
 			},
 			Game: &crashpilot_interface.InterfaceGame_CP{
 				Running:      boolPtr(options.Game.Running),
-				Side:         boolPtr(options.Game.Side),
-				TeamColor:    boolPtr(options.Game.TeamColor),
 				GoalkeeperId: uint32Ptr(options.Game.GoalkeeperID),
 				MaxSpeed:     uint32Ptr(options.Game.MaxSpeed),
 			},
@@ -878,6 +878,15 @@ func buildRobotCommands(robotIDs []uint32, input commandInput) ([]*crashpilot_in
 		if input.Speed != nil {
 			cmd.Speed = uint32Ptr(*input.Speed)
 		}
+		if input.Raw != nil {
+			cmd.Raw = boolPtr(*input.Raw)
+		}
+		if input.Inwall != nil {
+			cmd.Inwall = boolPtr(*input.Inwall)
+		}
+		if len(input.IgnoreRobots) > 0 {
+			cmd.IgnoreRobots = append([]uint32(nil), input.IgnoreRobots...)
+		}
 		if input.Orientation != nil {
 			cmd.Orientation = uint32Ptr(*input.Orientation)
 		}
@@ -912,6 +921,15 @@ func mapCommandView(cmd *crashpilot_interface.CP_Command) CommandView {
 	}
 	if cmd.Speed != nil {
 		view.Speed = uint32Ptr(cmd.GetSpeed())
+	}
+	if cmd.Raw != nil {
+		view.Raw = boolPtr(cmd.GetRaw())
+	}
+	if cmd.Inwall != nil {
+		view.Inwall = boolPtr(cmd.GetInwall())
+	}
+	if len(cmd.GetIgnoreRobots()) > 0 {
+		view.IgnoreRobots = append([]uint32(nil), cmd.GetIgnoreRobots()...)
 	}
 	if cmd.Orientation != nil {
 		view.Orientation = uint32Ptr(cmd.GetOrientation())

@@ -65,6 +65,10 @@ message InterfaceCommand_CP {
   required InterfaceManual_CP manual = 2;
   required InterfaceGame_CP game = 3;
   required InterfaceTest_CP test = 4;
+  // Set the side. false for x+, true for x-
+  required bool side = 5;
+  // Set the team color. False for Yellow, true for Blue
+  required bool team_color = 6;
 }
 
 message InterfaceManual_CP {
@@ -82,10 +86,6 @@ message InterfaceManual_CP {
 message InterfaceGame_CP {
   // Start or Stop
   required bool running = 1;
-  // Set the side. false for x+, true for x-
-  required bool side = 2;
-  // Set the team color. False for Yellow, true for Blue
-  required bool team_color = 3;
   // Set the robot, that should be goalkeeper
   required uint32 goalkeeper_id = 4;
   // Set the max speed for the game in mm/s, 0 for unlimited
