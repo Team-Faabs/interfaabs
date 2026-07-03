@@ -254,20 +254,24 @@ export default function App() {
     setUiError('')
   }
 
-  function submitOptions() {
-    const options = normalizeInterfaceOptions(optionsDraft)
+  function submitOptions(nextOptions = optionsDraft) {
+    const options = normalizeInterfaceOptions(nextOptions)
     setOptionsDraft(options)
     sendMessage({ type: 'set_options', options })
   }
 
+  function submitGameOptions() {
+    submitOptions({ ...optionsDraft, mode: 'MODE_GAME' })
+  }
+
   function toggleGameRunning() {
+    const starting = !optionsDraft.game.running
     const next = {
       ...optionsDraft,
+      mode: starting ? 'MODE_GAME' : optionsDraft.mode,
       game: { ...optionsDraft.game, running: !optionsDraft.game.running },
     }
-    const options = normalizeInterfaceOptions(next)
-    setOptionsDraft(options)
-    sendMessage({ type: 'set_options', options })
+    submitOptions(next)
   }
 
   const setMode = (mode) => setOptionsDraft((current) => ({ ...current, mode }))
@@ -400,7 +404,7 @@ export default function App() {
               goalieIds={teamGoalieIds}
               gamePhase={snapshot.gamePhase}
               onChangeGame={setGame}
-              onApply={submitOptions}
+              onApply={submitGameOptions}
               onToggleRunning={toggleGameRunning}
             />
           ) : builderTab === 'testmode' ? (
