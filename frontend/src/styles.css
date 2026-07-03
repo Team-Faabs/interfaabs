@@ -778,6 +778,82 @@ input:focus, select:focus {
 
 .split-col { min-width: 0; }
 
+.robot-task-debug {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  margin-bottom: 0.55rem;
+  overflow: hidden;
+}
+
+.debug-table-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.debug-table-head h3 {
+  margin: 0;
+  color: #dce8ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.debug-table-head span,
+.debug-empty {
+  color: #8ea3c7;
+  font-size: 0.78rem;
+}
+
+.debug-empty {
+  margin: 0;
+  padding: 0.65rem 0.7rem;
+}
+
+.debug-table-scroll {
+  overflow-x: auto;
+}
+
+.debug-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.debug-table th,
+.debug-table td {
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.debug-table th {
+  color: #8ea3c7;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(5, 11, 20, 0.32);
+}
+
+.debug-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.debug-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.robot-id-cell {
+  color: #7ee8dc;
+  font-weight: 700;
+}
+
 .feed-list {
   display: flex;
   flex-direction: column;

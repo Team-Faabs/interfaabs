@@ -599,6 +599,7 @@ export default function App() {
               <div className="section-head compact">
                 <h2>CrashPilot Feed</h2>
               </div>
+              <RobotTaskDebugTable robotCommands={snapshot.robotCommands} />
               <div className="feed-list">
                 {snapshot.robotCommands.length === 0 ? <p className="muted">No commands yet.</p> : null}
                 {snapshot.robotCommands.map((item) => (
@@ -651,6 +652,54 @@ export default function App() {
           </div>
         </section>
       </main>
+    </div>
+  )
+}
+
+function RobotTaskDebugTable({ robotCommands }) {
+  const commands = [...robotCommands].sort((a, b) => a.robotId - b.robotId)
+
+  return (
+    <div className="robot-task-debug">
+      <div className="debug-table-head">
+        <h3>Robot Tasks</h3>
+        <span>{commands.length} active</span>
+      </div>
+      {commands.length === 0 ? (
+        <p className="muted small debug-empty">No robot task commands received.</p>
+      ) : (
+        <div className="debug-table-scroll">
+          <table className="debug-table">
+            <thead>
+              <tr>
+                <th>Robot</th>
+                <th>State</th>
+                <th>Task</th>
+                <th>Target</th>
+                <th>Orient</th>
+                <th>Kick</th>
+                <th>Speed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commands.map((item) => {
+                const command = item.command || {}
+                return (
+                  <tr key={`${item.robotId}-${item.packetId}-${item.receivedAt}`}>
+                    <td className="robot-id-cell">#{item.robotId}</td>
+                    <td>{prettyEnum(command.state)}</td>
+                    <td>{prettyEnum(command.task)}</td>
+                    <td>{formatPosition(command.position)}</td>
+                    <td>{formatOptionalDegree(command.orientation)}</td>
+                    <td>{formatKick(command)}</td>
+                    <td>{command.speed ?? '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -1037,6 +1086,20 @@ function InfoRow({ label, value }) {
   )
 }
 
+function formatPosition(position) {
+  return position ? `${Math.round(position.x)}, ${Math.round(position.y)}` : '—'
+}
+
+function formatOptionalDegree(value) {
+  return value == null ? '—' : `${Math.round(value)}°`
+}
+
+function formatKick(command) {
+  if (command.kickOrientation == null && command.kickSpeed == null) {
+    return '—'
+  }
+  return `${formatOptionalDegree(command.kickOrientation)} / ${command.kickSpeed ?? '—'}`
+}
 
 function degreesToRadians(value) {
   return (Number(value) * Math.PI) / 180
