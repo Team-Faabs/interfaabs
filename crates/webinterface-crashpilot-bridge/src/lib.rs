@@ -70,7 +70,7 @@ impl CrashPilotAdapter {
   ) -> Result<Self, InterfaceError> {
     let system_id = system_id.into();
     let registered = handle.register_system(SystemDescriptor {
-      id: system_id,
+      id: system_id.clone(),
       label: label.into(),
       kind: SystemKind::CrashPilot,
       generation: 1,
@@ -84,6 +84,7 @@ impl CrashPilotAdapter {
         capability("crashpilot.world_model_quality", false),
       ],
     })?;
+    handle.attach_system_to_session(session_id, system_id.clone())?;
     Ok(Self {
       publisher: registered.publisher,
       commands: registered.commands,

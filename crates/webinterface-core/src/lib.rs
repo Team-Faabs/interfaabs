@@ -414,6 +414,32 @@ impl InterfaceHandle {
     self.inner.systems.write().remove(system_id).is_some()
   }
 
+  pub fn attach_system_to_session(
+    &self,
+    session_id: SessionId,
+    system_id: impl Into<SystemId>,
+  ) -> Result<SessionDescriptor, InterfaceError> {
+    let system_id = system_id.into();
+    if !self.inner.systems.read().contains_key(&system_id) {
+      return Err(InterfaceError::UnknownSystem(system_id));
+    }
+    let mut sessions = self.inner.sessions.write();
+    let session = sessions
+      .get_mut(&session_id)
+      .ok_or(InterfaceError::UnknownSession(session_id))?;
+    if !session.system_ids.contains(&system_id) {
+      session.system_ids.push(system_id);
+      session.system_ids.sort();
+    }
+    let updated = session.clone();
+    drop(sessions);
+    let _ = self
+      .inner
+      .broadcast
+      .send(ServerMessage::Session(updated.clone()));
+    Ok(updated)
+  }
+
   pub fn create_session(
     &self,
     label: impl Into<String>,
@@ -1183,6 +1209,36 @@ mod tests {
       },
     });
     assert!(matches!(result, Err(InterfaceError::CommandRejected(_))));
+  }
+
+  #[test]
+  fn registered_system_can_be_attached_to_an_existing_session() {
+    let config = InterfaceConfig {
+      bind_address: "127.0.0.1:0".parse().unwrap(),
+      recording_mode: RecordingMode::Off,
+      ..InterfaceConfig::default()
+    };
+    let (_guard, handle) = InterfaceHost::start(config).unwrap();
+    let session = handle.create_session("live", SessionKind::LiveMatch, true, Vec::new(), 1);
+    let _registered = handle
+      .register_system(SystemDescriptor {
+        id: "referris".into(),
+        label: "Referris".into(),
+        kind: SystemKind::Referris,
+        generation: 1,
+        capabilities: Vec::new(),
+      })
+      .unwrap();
+
+    let attached = handle
+      .attach_system_to_session(session.id, "referris")
+      .unwrap();
+    assert_eq!(attached.system_ids, vec!["referris"]);
+    let attached_again = handle
+      .attach_system_to_session(session.id, "referris")
+      .unwrap();
+    assert_eq!(attached_again.system_ids, vec!["referris"]);
+    assert_eq!(handle.bootstrap().sessions[0].system_ids, vec!["referris"]);
   }
 
   #[tokio::test]
