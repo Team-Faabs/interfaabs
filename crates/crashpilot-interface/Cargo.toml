@@ -1,0 +1,21 @@
+[package]
+name = "crashpilot-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "crashpilot-interface"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+webinterface-assets = { path = "../webinterface-assets" }
+webinterface-core = { path = "../webinterface-core" }
+webinterface-crashpilot-bridge = { path = "../webinterface-crashpilot-bridge" }
+webinterface-protocol = { path = "../webinterface-protocol" }
+webinterface-recording = { path = "../webinterface-recording" }
+
