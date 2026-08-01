@@ -1,0 +1,148 @@
+.tb {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 10px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+.tb > * { flex: none; min-width: 0; }
+.tb-spacer { flex: 1 1 auto; }
+
+.tb-brand { display: flex; align-items: center; gap: 7px; font-weight: 650; letter-spacing: -0.01em; }
+
+.tb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+}
+.tb-chip b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.tb-chip i { font-style: normal; color: var(--dim); font-size: var(--font-size-xs); }
+.tb-chip--muted { color: var(--dim); }
+
+.tb-rec { cursor: pointer; }
+.tb-rec:disabled { opacity: 0.5; cursor: not-allowed; }
+.tb-rec-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--dim); }
+.tb-rec.is-on { border-color: var(--danger); color: var(--danger); }
+.tb-rec.is-on .tb-rec-dot { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+.tb-transport { display: inline-flex; gap: 3px; }
+
+.tb-speed {
+  height: var(--control-h);
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  color: var(--ok);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.tb-live.is-review {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+.tb-live-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+
+.tb-health { display: flex; gap: 12px; font-size: var(--font-size-xs); color: var(--muted); overflow: hidden; }
+.tb-health span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tb-health-empty { font-size: var(--font-size-xs); }
+
+.tb-alerts {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+.tb-alerts--warn { border-color: var(--warn); color: var(--warn); }
+.tb-alerts--error { border-color: var(--danger); color: var(--danger); }
+
+.tb-meta { font-size: var(--font-size-xs); color: var(--muted); white-space: nowrap; }
+
+.tb-token {
+  max-width: 320px;
+  height: calc(var(--control-h) - 4px);
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tb-token:hover { color: var(--text); }
+
+.tb-emergency { display: flex; gap: 6px; margin-left: 6px; }
+.tb-halt,
+.tb-stop {
+  height: calc(var(--control-h) + 4px);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.tb-halt { background: var(--danger); color: var(--danger-ink); }
+.tb-stop { background: var(--warn); color: var(--warn-ink); }
+.tb-halt:disabled,
+.tb-stop:disabled { opacity: 0.4; cursor: not-allowed; }
+.tb-halt:hover:not(:disabled),
+.tb-stop:hover:not(:disabled) { filter: brightness(1.1); }
+
+.tb-menu { display: flex; flex-direction: column; padding: 4px; }
+.tb-menu button {
+  height: var(--row-h);
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.tb-menu button:hover { background: var(--accent); color: var(--accent-ink); }

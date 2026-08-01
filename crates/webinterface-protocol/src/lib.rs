@@ -345,6 +345,37 @@ pub enum SessionKind {
   Batch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingFormat {
+  Faabsrec,
+  Shreplay,
+  SslLog,
+  SslLogGz,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordingSummary {
+  /// Host-assigned, opaque. **Never a filesystem path.** The browser must not
+  /// be able to name an arbitrary file, so the host keeps an id-to-path table
+  /// and rejects ids it did not issue.
+  pub id: String,
+  pub label: String,
+  pub format: RecordingFormat,
+  pub size_bytes: u64,
+  pub modified_at_ns: TimestampNs,
+  /// `None` when the file is `.partial` or its header cannot be read.
+  pub frame_count: Option<u64>,
+  pub duration_ns: Option<u64>,
+  pub session_kind: Option<SessionKind>,
+  /// True for `.partial` files left by a crash or still being written.
+  pub partial: bool,
+  /// Set when the file exists but could not be summarised. A listing must
+  /// still include it — an unreadable recording is exactly what the operator
+  /// needs to be told about.
+  pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionLifecycle {
@@ -426,6 +457,10 @@ pub enum CommandAction {
   },
   StopRecording {
     session_id: SessionId,
+  },
+  RefreshRecordings,
+  OpenRecording {
+    recording_id: String,
   },
   Export {
     session_id: SessionId,
@@ -633,6 +668,11 @@ pub struct StateEnvelope {
   pub sequence: u64,
   pub published_at_ns: TimestampNs,
   pub snapshot: SystemSnapshot,
+  /// `None` for the live head, which is broadcast to every browser.
+  /// `Some(id)` marks this envelope as the answer to one viewer cursor's
+  /// seek, so a client can route it to the panel bound to that cursor
+  /// instead of treating it as the live world.
+  pub cursor_id: Option<CursorId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -725,6 +765,9 @@ pub enum ServerMessage {
     health: SystemHealth,
   },
   Session(SessionDescriptor),
+  Recordings {
+    recordings: Vec<RecordingSummary>,
+  },
   Pong {
     nonce: u64,
   },

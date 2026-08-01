@@ -1,7 +1,9 @@
 //! Shared Rust host for CrashPilot, simhark, replay, and debug adapters.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::{Path as FilePath, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
@@ -10,26 +12,31 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, Response, StatusCode, header};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::{Mutex, RwLock};
+use serde::Deserialize;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 use webinterface_protocol::{
   Bootstrap, BrowserCommand, ClientHello, ClientMessage, CommandAcknowledgement, CommandAction,
   CommandOrigin, CommandStatus, DurableEvent, EventEnvelope, HealthLevel, PROTOCOL_VERSION,
-  RELOAD_REQUIRED_CLOSE_CODE, ServerControl, ServerMessage, SessionDescriptor, SessionId,
-  SessionKind, SessionLifecycle, StateEnvelope, SystemCommand, SystemDescriptor, SystemHealth,
-  SystemId, SystemSnapshot, TimestampNs, ViewerCursor,
+  RELOAD_REQUIRED_CLOSE_CODE, RecordingFormat, RecordingSummary, ServerControl, ServerMessage,
+  SessionDescriptor, SessionId, SessionKind, SessionLifecycle, StateEnvelope, SystemCommand,
+  SystemDescriptor, SystemHealth, SystemId, SystemSnapshot, TimestampNs, ViewerCursor,
 };
 use webinterface_recording::{
-  RecordedItem, RecordingError, RecordingHeader, RecordingMode, RecordingWriter,
+  RecordedItem, RecordingError, RecordingHeader, RecordingMode, RecordingReader, RecordingWriter,
+  inspect_finalized_recording, inspect_recording_header,
 };
+
+const MAX_IMPORT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 pub trait AssetSource: Send + Sync + 'static {
   fn fingerprint(&self) -> &str;
@@ -145,6 +152,7 @@ impl SystemPublisher {
       sequence,
       published_at_ns: now_ns(),
       snapshot,
+      cursor_id: None,
     };
     self.inner.publish_state(envelope)
   }
@@ -227,6 +235,12 @@ struct SystemEntry {
   health: RwLock<SystemHealth>,
 }
 
+#[derive(Clone)]
+struct RecordingCatalogEntry {
+  path: PathBuf,
+  summary: RecordingSummary,
+}
+
 struct Inner {
   config: InterfaceConfig,
   local_address: RwLock<SocketAddr>,
@@ -238,6 +252,9 @@ struct Inner {
   connected_browsers: AtomicUsize,
   last_command_origin: RwLock<Option<CommandOrigin>>,
   recordings: Mutex<BTreeMap<SessionId, RecordingWriter>>,
+  recording_paths: Mutex<BTreeMap<SessionId, PathBuf>>,
+  recording_readers: Mutex<BTreeMap<SessionId, RecordingReader>>,
+  recording_catalog: RwLock<BTreeMap<String, RecordingCatalogEntry>>,
   pending_commands: Mutex<BTreeMap<Uuid, Option<SessionId>>>,
   interface_sequence: AtomicU64,
   shutting_down: AtomicBool,
@@ -259,10 +276,14 @@ impl InterfaceHost {
       connected_browsers: AtomicUsize::new(0),
       last_command_origin: RwLock::new(None),
       recordings: Mutex::new(BTreeMap::new()),
+      recording_paths: Mutex::new(BTreeMap::new()),
+      recording_readers: Mutex::new(BTreeMap::new()),
+      recording_catalog: RwLock::new(BTreeMap::new()),
       pending_commands: Mutex::new(BTreeMap::new()),
       interface_sequence: AtomicU64::new(0),
       shutting_down: AtomicBool::new(false),
     });
+    inner.refresh_recordings()?;
 
     let std_listener =
       std::net::TcpListener::bind(inner.config.bind_address).map_err(|source| {
@@ -505,7 +526,10 @@ impl InterfaceHandle {
       .send(ServerMessage::Session(updated.clone()));
 
     if let Some(writer) = self.inner.recordings.lock().remove(&session_id) {
-      writer.finalize(lifecycle, terminal_error)?;
+      self.inner.recording_readers.lock().remove(&session_id);
+      if let Some(path) = writer.finalize(lifecycle, terminal_error)? {
+        self.inner.recording_paths.lock().insert(session_id, path);
+      }
     }
     Ok(updated)
   }
@@ -529,12 +553,22 @@ impl InterfaceHandle {
       header,
       &format!("{}_{}", session.label, session.id),
     )?;
+    self.inner.recording_readers.lock().remove(&session_id);
+    self.inner.recording_paths.lock().remove(&session_id);
+    if let Some(path) = writer.path() {
+      self
+        .inner
+        .recording_paths
+        .lock()
+        .insert(session_id, path.to_owned());
+    }
     self.inner.recordings.lock().insert(session_id, writer);
     Ok(())
   }
 
   pub fn stop_recording(&self, session_id: SessionId) -> Result<(), InterfaceError> {
     if let Some(writer) = self.inner.recordings.lock().remove(&session_id) {
+      self.inner.recording_readers.lock().remove(&session_id);
       let lifecycle = self
         .inner
         .sessions
@@ -542,7 +576,9 @@ impl InterfaceHandle {
         .get(&session_id)
         .map(|session| session.lifecycle.clone())
         .unwrap_or(SessionLifecycle::Completed);
-      writer.finalize(lifecycle, None)?;
+      if let Some(path) = writer.finalize(lifecycle, None)? {
+        self.inner.recording_paths.lock().insert(session_id, path);
+      }
     }
     Ok(())
   }
@@ -598,6 +634,56 @@ impl Inner {
       sessions: self.sessions.read().values().cloned().collect(),
       snapshots: self.snapshots.read().values().cloned().collect(),
     }
+  }
+
+  fn recording_summaries(&self) -> Vec<RecordingSummary> {
+    let mut recordings = self
+      .recording_catalog
+      .read()
+      .values()
+      .map(|entry| entry.summary.clone())
+      .collect::<Vec<_>>();
+    recordings.sort_by(|left, right| {
+      left
+        .label
+        .cmp(&right.label)
+        .then_with(|| left.id.cmp(&right.id))
+    });
+    recordings
+  }
+
+  fn refresh_recordings(&self) -> Result<Vec<RecordingSummary>, InterfaceError> {
+    let Some(directory) = self.config.recording_mode.directory() else {
+      self.recording_catalog.write().clear();
+      let recordings = Vec::new();
+      let _ = self.broadcast.send(ServerMessage::Recordings {
+        recordings: recordings.clone(),
+      });
+      return Ok(recordings);
+    };
+    fs::create_dir_all(&directory).map_err(RecordingError::from)?;
+    let paths = recording_paths_in(&directory).map_err(RecordingError::from)?;
+    let existing_ids = self
+      .recording_catalog
+      .read()
+      .values()
+      .map(|entry| (entry.path.clone(), entry.summary.id.clone()))
+      .collect::<BTreeMap<_, _>>();
+    let mut catalog = BTreeMap::new();
+    for path in paths {
+      let id = existing_ids
+        .get(&path)
+        .cloned()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+      let summary = summarize_recording(&path, id.clone());
+      catalog.insert(id, RecordingCatalogEntry { path, summary });
+    }
+    *self.recording_catalog.write() = catalog;
+    let recordings = self.recording_summaries();
+    let _ = self.broadcast.send(ServerMessage::Recordings {
+      recordings: recordings.clone(),
+    });
+    Ok(recordings)
   }
 
   fn publish_state(&self, envelope: StateEnvelope) -> Result<(), InterfaceError> {
@@ -704,7 +790,23 @@ impl Inner {
         if !self.sessions.read().contains_key(&cursor.session_id) {
           return Err(InterfaceError::UnknownSession(cursor.session_id));
         }
-        self.cursors.write().insert(cursor.id, cursor.clone());
+        if !cursor.live
+          && let Some(frame) = cursor.frame
+        {
+          let Some(states) = self.recorded_state_at(cursor.session_id, frame)? else {
+            ack.status = CommandStatus::Rejected;
+            ack.message = "session is not recorded, so it cannot be seeked".into();
+            ack.completed_at_ns = Some(now_ns());
+            return self.finish_command(&command, ack);
+          };
+          self.cursors.write().insert(cursor.id, cursor.clone());
+          for mut state in states {
+            state.cursor_id = Some(cursor.id);
+            let _ = self.broadcast.send(ServerMessage::State(state));
+          }
+        } else {
+          self.cursors.write().insert(cursor.id, cursor.clone());
+        }
         ack.status = CommandStatus::Applied;
         ack.completed_at_ns = Some(now_ns());
       }
@@ -737,8 +839,70 @@ impl Inner {
       }
       CommandAction::StopRecording { session_id } => {
         if let Some(writer) = self.recordings.lock().remove(session_id) {
-          writer.finalize(SessionLifecycle::Completed, None)?;
+          self.recording_readers.lock().remove(session_id);
+          if let Some(path) = writer.finalize(SessionLifecycle::Completed, None)? {
+            self.recording_paths.lock().insert(*session_id, path);
+          }
         }
+        ack.status = CommandStatus::Applied;
+        ack.completed_at_ns = Some(now_ns());
+      }
+      CommandAction::RefreshRecordings => match self.refresh_recordings() {
+        Ok(_) => {
+          ack.status = CommandStatus::Applied;
+          ack.completed_at_ns = Some(now_ns());
+        }
+        Err(error) => {
+          ack.status = CommandStatus::Rejected;
+          ack.message = error.to_string();
+          ack.completed_at_ns = Some(now_ns());
+        }
+      },
+      CommandAction::OpenRecording { recording_id } => {
+        let Some(recording) = self.recording_catalog.read().get(recording_id).cloned() else {
+          ack.status = CommandStatus::Rejected;
+          ack.message = "unknown recording id".into();
+          ack.completed_at_ns = Some(now_ns());
+          return self.finish_command(&command, ack);
+        };
+        if recording.summary.format != RecordingFormat::Faabsrec {
+          ack.status = CommandStatus::Rejected;
+          ack.message = format!(
+            "{} import is not implemented yet",
+            recording_format_name(recording.summary.format)
+          );
+          ack.completed_at_ns = Some(now_ns());
+          return self.finish_command(&command, ack);
+        }
+        let reader = match RecordingReader::open(&recording.path) {
+          Ok(reader) => reader,
+          Err(error) => {
+            ack.status = CommandStatus::Rejected;
+            ack.message = error.to_string();
+            ack.completed_at_ns = Some(now_ns());
+            return self.finish_command(&command, ack);
+          }
+        };
+        let recorded_session = reader.header().session.clone();
+        let session = SessionDescriptor {
+          id: Uuid::new_v4(),
+          label: recording.summary.label,
+          kind: SessionKind::Replay,
+          lifecycle: SessionLifecycle::Completed,
+          mutable: false,
+          created_at_ns: TimestampNs(reader.header().created_at_ns),
+          system_ids: recorded_session.system_ids,
+          world_count: recorded_session.world_count,
+          live_frame: reader.frame_range().map(|(_, last)| last),
+          terminal_error: None,
+        };
+        self
+          .recording_paths
+          .lock()
+          .insert(session.id, recording.path);
+        self.recording_readers.lock().insert(session.id, reader);
+        self.sessions.write().insert(session.id, session.clone());
+        let _ = self.broadcast.send(ServerMessage::Session(session));
         ack.status = CommandStatus::Applied;
         ack.completed_at_ns = Some(now_ns());
       }
@@ -797,17 +961,7 @@ impl Inner {
       }
     }
 
-    *self.last_command_origin.write() = Some(command.origin.clone());
-    if let Some(session_id) = command.origin.session_id {
-      let _ = self.synthetic_event(
-        session_id,
-        DurableEvent::CommandAcknowledgement(ack.clone()),
-      );
-    }
-    let _ = self
-      .broadcast
-      .send(ServerMessage::CommandAcknowledgement(ack.clone()));
-    Ok(ack)
+    self.finish_command(&command, ack)
   }
 
   fn validate_origin(&self, command: &BrowserCommand) -> Result<(), InterfaceError> {
@@ -818,7 +972,12 @@ impl Inner {
         .get(&session_id)
         .cloned()
         .ok_or(InterfaceError::UnknownSession(session_id))?;
-      let mutating = !matches!(command.action, CommandAction::SetViewerCursor(_));
+      let mutating = !matches!(
+        command.action,
+        CommandAction::SetViewerCursor(_)
+          | CommandAction::RefreshRecordings
+          | CommandAction::OpenRecording { .. }
+      );
       if mutating && !session.mutable {
         return Err(InterfaceError::CommandRejected(
           "historical or completed sessions are read-only".into(),
@@ -856,6 +1015,69 @@ impl Inner {
     })
   }
 
+  fn recorded_state_at(
+    &self,
+    session_id: SessionId,
+    frame: u64,
+  ) -> Result<Option<Vec<StateEnvelope>>, InterfaceError> {
+    let active_path = {
+      let mut recordings = self.recordings.lock();
+      let Some(writer) = recordings.get_mut(&session_id) else {
+        drop(recordings);
+        return self.state_at_recording_path(session_id, frame);
+      };
+      writer.flush_boundary()?;
+      writer.path().map(PathBuf::from)
+    };
+    let Some(path) = active_path else {
+      return Ok(None);
+    };
+    self.recording_paths.lock().insert(session_id, path);
+    self.state_at_recording_path(session_id, frame)
+  }
+
+  fn state_at_recording_path(
+    &self,
+    session_id: SessionId,
+    frame: u64,
+  ) -> Result<Option<Vec<StateEnvelope>>, InterfaceError> {
+    let Some(path) = self.recording_paths.lock().get(&session_id).cloned() else {
+      return Ok(None);
+    };
+    let mut readers = self.recording_readers.lock();
+    if !readers.contains_key(&session_id) {
+      readers.insert(session_id, RecordingReader::open(&path)?);
+    }
+    let mut states = readers
+      .get_mut(&session_id)
+      .expect("recording reader was just inserted")
+      .state_at(frame)?;
+    for state in &mut states {
+      state.session_id = session_id;
+    }
+    Ok(Some(states))
+  }
+
+  fn finish_command(
+    &self,
+    command: &BrowserCommand,
+    ack: CommandAcknowledgement,
+  ) -> Result<CommandAcknowledgement, InterfaceError> {
+    if ack.status != CommandStatus::Rejected {
+      *self.last_command_origin.write() = Some(command.origin.clone());
+    }
+    if let Some(session_id) = command.origin.session_id {
+      let _ = self.synthetic_event(
+        session_id,
+        DurableEvent::CommandAcknowledgement(ack.clone()),
+      );
+    }
+    let _ = self
+      .broadcast
+      .send(ServerMessage::CommandAcknowledgement(ack.clone()));
+    Ok(ack)
+  }
+
   fn start_recording_internal(
     &self,
     session_id: SessionId,
@@ -877,14 +1099,169 @@ impl Inner {
       header,
       &format!("{}_{}", session.label, session.id),
     )?;
+    self.recording_readers.lock().remove(&session_id);
+    self.recording_paths.lock().remove(&session_id);
+    if let Some(path) = writer.path() {
+      self
+        .recording_paths
+        .lock()
+        .insert(session_id, path.to_owned());
+    }
     Ok(self.recordings.lock().insert(session_id, writer))
   }
+}
+
+fn recording_paths_in(directory: &FilePath) -> std::io::Result<Vec<PathBuf>> {
+  let mut directories = vec![directory.to_owned()];
+  let mut recordings = Vec::new();
+  while let Some(directory) = directories.pop() {
+    for entry in fs::read_dir(directory)? {
+      let entry = entry?;
+      let file_type = match entry.file_type() {
+        Ok(file_type) => file_type,
+        Err(_) if recording_format(&entry.file_name().to_string_lossy()).is_some() => {
+          recordings.push(entry.path());
+          continue;
+        }
+        Err(error) => return Err(error),
+      };
+      if file_type.is_dir() {
+        directories.push(entry.path());
+      } else if file_type.is_file()
+        && recording_format(&entry.file_name().to_string_lossy()).is_some()
+      {
+        recordings.push(entry.path());
+      }
+    }
+  }
+  recordings.sort();
+  Ok(recordings)
+}
+
+fn recording_format(filename: &str) -> Option<(RecordingFormat, bool)> {
+  if filename.ends_with(".faabsrec.partial") {
+    Some((RecordingFormat::Faabsrec, true))
+  } else if filename.ends_with(".faabsrec") {
+    Some((RecordingFormat::Faabsrec, false))
+  } else if filename.ends_with(".shreplay") {
+    Some((RecordingFormat::Shreplay, false))
+  } else if filename.ends_with(".log.gz") {
+    Some((RecordingFormat::SslLogGz, false))
+  } else if filename.ends_with(".log") {
+    Some((RecordingFormat::SslLog, false))
+  } else {
+    None
+  }
+}
+
+fn recording_format_name(format: RecordingFormat) -> &'static str {
+  match format {
+    RecordingFormat::Faabsrec => "faabsrec",
+    RecordingFormat::Shreplay => "shreplay",
+    RecordingFormat::SslLog => "ssl_log",
+    RecordingFormat::SslLogGz => "ssl_log_gz",
+  }
+}
+
+fn summarize_recording(path: &FilePath, id: String) -> RecordingSummary {
+  let filename = path
+    .file_name()
+    .map(|name| name.to_string_lossy().into_owned())
+    .unwrap_or_else(|| "recording".into());
+  let (format, partial) = recording_format(&filename)
+    .expect("only supported recording paths are passed to summarize_recording");
+  let mut summary = RecordingSummary {
+    id,
+    label: filename,
+    format,
+    size_bytes: 0,
+    modified_at_ns: TimestampNs(0),
+    frame_count: None,
+    duration_ns: None,
+    session_kind: None,
+    partial,
+    error: None,
+  };
+  match fs::metadata(path) {
+    Ok(metadata) => {
+      summary.size_bytes = metadata.len();
+      let modified = match metadata.modified() {
+        Ok(modified) => modified,
+        Err(error) => {
+          summary.error = Some(error.to_string());
+          return summary;
+        }
+      };
+      let modified = match modified.duration_since(UNIX_EPOCH) {
+        Ok(modified) => modified,
+        Err(error) => {
+          summary.error = Some(error.to_string());
+          return summary;
+        }
+      };
+      summary.modified_at_ns = TimestampNs(modified.as_nanos().min(u64::MAX as u128) as u64);
+    }
+    Err(error) => {
+      summary.error = Some(error.to_string());
+      return summary;
+    }
+  }
+  if format != RecordingFormat::Faabsrec || partial {
+    return summary;
+  }
+  match inspect_recording_header(path) {
+    Ok(header) => {
+      summary.label = header.session.label;
+      summary.session_kind = Some(header.session.kind);
+    }
+    Err(error) => {
+      summary.error = Some(error.to_string());
+      return summary;
+    }
+  }
+  match inspect_finalized_recording(path) {
+    Ok(recording) => {
+      let first_frame = recording
+        .index
+        .chunks
+        .iter()
+        .filter_map(|chunk| chunk.first_frame)
+        .min();
+      let last_frame = recording
+        .index
+        .chunks
+        .iter()
+        .filter_map(|chunk| chunk.last_frame)
+        .max();
+      summary.frame_count = first_frame
+        .zip(last_frame)
+        .map(|(first, last)| last.saturating_sub(first).saturating_add(1));
+      let first_timestamp = recording
+        .index
+        .chunks
+        .iter()
+        .filter_map(|chunk| chunk.first_timestamp_ns)
+        .min();
+      let last_timestamp = recording
+        .index
+        .chunks
+        .iter()
+        .filter_map(|chunk| chunk.last_timestamp_ns)
+        .max();
+      summary.duration_ns = first_timestamp
+        .zip(last_timestamp)
+        .map(|(first, last)| last.saturating_sub(first));
+    }
+    Err(error) => summary.error = Some(error.to_string()),
+  }
+  summary
 }
 
 fn router(inner: Arc<Inner>) -> Router {
   Router::new()
     .route("/api/v1/bootstrap", get(bootstrap))
     .route("/api/v1/health", get(health))
+    .route("/api/v1/recordings/import", post(import_recording))
     .route("/api/v1/ws", get(websocket))
     .route("/", get(index))
     .route("/{*path}", get(asset))
@@ -903,6 +1280,158 @@ async fn health(State(inner): State<Arc<Inner>>) -> impl IntoResponse {
     "systems": inner.systems.read().len(),
     "sessions": inner.sessions.read().len(),
   }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportRecordingQuery {
+  filename: String,
+}
+
+async fn import_recording(
+  Query(query): Query<ImportRecordingQuery>,
+  State(inner): State<Arc<Inner>>,
+  body: Body,
+) -> Response<Body> {
+  if query.filename.contains('/') || query.filename.contains('\\') || query.filename.contains("..")
+  {
+    return response(
+      StatusCode::BAD_REQUEST,
+      "text/plain",
+      b"invalid recording filename",
+      false,
+    );
+  }
+  if recording_format(&query.filename).is_none() {
+    return response(
+      StatusCode::BAD_REQUEST,
+      "text/plain",
+      b"unsupported recording format",
+      false,
+    );
+  }
+  let Some(directory) = inner.config.recording_mode.directory() else {
+    return response(
+      StatusCode::SERVICE_UNAVAILABLE,
+      "text/plain",
+      b"recording directory is unavailable",
+      false,
+    );
+  };
+  if tokio::fs::create_dir_all(&directory).await.is_err() {
+    return response(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      "text/plain",
+      b"failed to create recording directory",
+      false,
+    );
+  }
+  let destination = directory.join(&query.filename);
+  let mut file = match tokio::fs::OpenOptions::new()
+    .create_new(true)
+    .write(true)
+    .open(&destination)
+    .await
+  {
+    Ok(file) => file,
+    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+      return response(
+        StatusCode::CONFLICT,
+        "text/plain",
+        b"a recording with that filename already exists",
+        false,
+      );
+    }
+    Err(_) => {
+      return response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "text/plain",
+        b"failed to create imported recording",
+        false,
+      );
+    }
+  };
+
+  let mut received = 0_u64;
+  let mut stream = body.into_data_stream();
+  while let Some(chunk) = stream.next().await {
+    let chunk = match chunk {
+      Ok(chunk) => chunk,
+      Err(_) => {
+        drop(file);
+        let _ = tokio::fs::remove_file(&destination).await;
+        return response(
+          StatusCode::BAD_REQUEST,
+          "text/plain",
+          b"failed to read request body",
+          false,
+        );
+      }
+    };
+    received = received.saturating_add(chunk.len() as u64);
+    if received > MAX_IMPORT_BYTES {
+      drop(file);
+      let _ = tokio::fs::remove_file(&destination).await;
+      return response(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "text/plain",
+        b"recording exceeds the 2 GiB limit",
+        false,
+      );
+    }
+    if file.write_all(&chunk).await.is_err() {
+      drop(file);
+      let _ = tokio::fs::remove_file(&destination).await;
+      return response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "text/plain",
+        b"failed to write imported recording",
+        false,
+      );
+    }
+  }
+  if file.flush().await.is_err() || file.sync_all().await.is_err() {
+    drop(file);
+    let _ = tokio::fs::remove_file(&destination).await;
+    return response(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      "text/plain",
+      b"failed to finish imported recording",
+      false,
+    );
+  }
+  drop(file);
+
+  if inner.refresh_recordings().is_err() {
+    return response(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      "text/plain",
+      b"failed to refresh recordings",
+      false,
+    );
+  }
+  let summary = inner
+    .recording_catalog
+    .read()
+    .values()
+    .find(|entry| entry.path == destination)
+    .map(|entry| entry.summary.clone());
+  let Some(summary) = summary else {
+    return response(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      "text/plain",
+      b"imported recording was not found after refresh",
+      false,
+    );
+  };
+  match serde_json::to_vec(&summary) {
+    Ok(body) => response(StatusCode::OK, "application/json", &body, false),
+    Err(_) => response(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      "text/plain",
+      b"failed to encode imported recording",
+      false,
+    ),
+  }
 }
 
 async fn websocket(ws: WebSocketUpgrade, State(inner): State<Arc<Inner>>) -> impl IntoResponse {
@@ -971,6 +1500,18 @@ async fn websocket_connection(socket: WebSocket, inner: Arc<Inner>) {
   if send_messagepack(&mut sender, &inner.initial_state())
     .await
     .is_err()
+  {
+    inner.connected_browsers.fetch_sub(1, Ordering::Relaxed);
+    return;
+  }
+  if send_messagepack(
+    &mut sender,
+    &ServerMessage::Recordings {
+      recordings: inner.recording_summaries(),
+    },
+  )
+  .await
+  .is_err()
   {
     inner.connected_browsers.fetch_sub(1, Ordering::Relaxed);
     return;
@@ -1142,8 +1683,96 @@ mod tests {
   use futures_util::{SinkExt, StreamExt};
   use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
   use webinterface_protocol::{
-    Capability, CommandAction, CommandOrigin, CrashPilotCommand, SystemKind,
+    Capability, CommandAction, CommandOrigin, CrashPilotCommand, Score, SystemKind, WorldState,
   };
+
+  fn system_descriptor(id: &str) -> SystemDescriptor {
+    SystemDescriptor {
+      id: id.into(),
+      label: id.into(),
+      kind: SystemKind::Simhark,
+      generation: 1,
+      capabilities: Vec::new(),
+    }
+  }
+
+  fn snapshot_at(frame: u64) -> SystemSnapshot {
+    SystemSnapshot {
+      worlds: vec![WorldState {
+        world_id: 0,
+        frame,
+        simulation_time_ns: TimestampNs(frame * 1_000_000),
+        field: Default::default(),
+        ball: None,
+        robots: Vec::new(),
+        referee: None,
+        score: Score { blue: 0, yellow: 0 },
+        events: Vec::new(),
+      }],
+      debug_layers: Vec::new(),
+      debug_items: Vec::new(),
+      properties: BTreeMap::new(),
+    }
+  }
+
+  fn cursor_command(session_id: SessionId, cursor: ViewerCursor) -> BrowserCommand {
+    BrowserCommand {
+      id: Uuid::new_v4(),
+      origin: CommandOrigin {
+        browser_instance_id: Uuid::new_v4(),
+        panel_id: "test".into(),
+        session_id: Some(session_id),
+        viewer_cursor_id: None,
+        client_sequence: 1,
+        workstation_label: None,
+      },
+      action: CommandAction::SetViewerCursor(cursor),
+    }
+  }
+
+  fn browser_command(action: CommandAction) -> BrowserCommand {
+    BrowserCommand {
+      id: Uuid::new_v4(),
+      origin: CommandOrigin {
+        browser_instance_id: Uuid::new_v4(),
+        panel_id: "test".into(),
+        session_id: None,
+        viewer_cursor_id: None,
+        client_sequence: 1,
+        workstation_label: None,
+      },
+      action,
+    }
+  }
+
+  fn handle_without_server(recording_mode: RecordingMode) -> InterfaceHandle {
+    let config = InterfaceConfig {
+      bind_address: "127.0.0.1:0".parse().unwrap(),
+      recording_mode,
+      ..InterfaceConfig::default()
+    };
+    let (broadcast, _) = broadcast::channel(config.broadcast_capacity.max(16));
+    InterfaceHandle {
+      inner: Arc::new(Inner {
+        local_address: RwLock::new(config.bind_address),
+        config,
+        systems: RwLock::new(BTreeMap::new()),
+        sessions: RwLock::new(BTreeMap::new()),
+        cursors: RwLock::new(BTreeMap::new()),
+        snapshots: RwLock::new(BTreeMap::new()),
+        broadcast,
+        connected_browsers: AtomicUsize::new(0),
+        last_command_origin: RwLock::new(None),
+        recordings: Mutex::new(BTreeMap::new()),
+        recording_paths: Mutex::new(BTreeMap::new()),
+        recording_readers: Mutex::new(BTreeMap::new()),
+        recording_catalog: RwLock::new(BTreeMap::new()),
+        pending_commands: Mutex::new(BTreeMap::new()),
+        interface_sequence: AtomicU64::new(0),
+        shutting_down: AtomicBool::new(false),
+      }),
+    }
+  }
 
   #[test]
   fn two_independent_hosts_can_run_in_one_process() {
@@ -1156,6 +1785,132 @@ mod tests {
     let (second_guard, second) = InterfaceHost::start(config).unwrap();
     assert_ne!(first.local_address(), second.local_address());
     drop((first_guard, second_guard));
+  }
+
+  #[test]
+  fn recording_listing_includes_partial_files_and_marks_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let nested = directory.path().join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("crashed.faabsrec.partial"), b"partial").unwrap();
+    let handle = handle_without_server(RecordingMode::Disk {
+      directory: directory.path().into(),
+    });
+
+    let recordings = handle.inner.refresh_recordings().unwrap();
+
+    assert_eq!(recordings.len(), 1);
+    assert_eq!(recordings[0].format, RecordingFormat::Faabsrec);
+    assert!(recordings[0].partial);
+    assert_eq!(recordings[0].frame_count, None);
+    assert_eq!(recordings[0].duration_ns, None);
+    assert_eq!(recordings[0].session_kind, None);
+  }
+
+  #[test]
+  fn recording_listing_reports_an_unreadable_file_instead_of_hiding_it() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("broken.faabsrec"), b"not a recording").unwrap();
+    let handle = handle_without_server(RecordingMode::Disk {
+      directory: directory.path().into(),
+    });
+
+    let recordings = handle.inner.refresh_recordings().unwrap();
+
+    assert_eq!(recordings.len(), 1);
+    assert!(recordings[0].error.is_some());
+    assert_eq!(recordings[0].frame_count, None);
+  }
+
+  #[test]
+  fn opening_an_unknown_recording_id_is_rejected() {
+    let handle = handle_without_server(RecordingMode::Off);
+
+    let acknowledgement = handle
+      .submit_browser_command(browser_command(CommandAction::OpenRecording {
+        recording_id: "not-issued-by-this-host".into(),
+      }))
+      .unwrap();
+
+    assert_eq!(acknowledgement.status, CommandStatus::Rejected);
+    assert_eq!(acknowledgement.message, "unknown recording id");
+  }
+
+  #[test]
+  fn opening_a_recording_creates_a_replay_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let recorded_session = SessionDescriptor {
+      id: Uuid::new_v4(),
+      label: "Imported final".into(),
+      kind: SessionKind::Simulation,
+      lifecycle: SessionLifecycle::Completed,
+      mutable: false,
+      created_at_ns: TimestampNs(1),
+      system_ids: vec!["simhark".into()],
+      world_count: 1,
+      live_frame: Some(7),
+      terminal_error: None,
+    };
+    let header = RecordingHeader::new(PROTOCOL_VERSION, 1, "test", recorded_session.clone());
+    let mut writer = RecordingWriter::create(
+      RecordingMode::Disk {
+        directory: directory.path().into(),
+      },
+      header,
+      "imported",
+    )
+    .unwrap();
+    writer
+      .append(RecordedItem::State(StateEnvelope {
+        system_id: "simhark".into(),
+        generation: 1,
+        session_id: recorded_session.id,
+        sequence: 1,
+        published_at_ns: TimestampNs(7_000_000),
+        snapshot: snapshot_at(7),
+        cursor_id: None,
+      }))
+      .unwrap();
+    writer.finalize(SessionLifecycle::Completed, None).unwrap();
+    let handle = handle_without_server(RecordingMode::Disk {
+      directory: directory.path().into(),
+    });
+    let recordings = handle.inner.refresh_recordings().unwrap();
+
+    let acknowledgement = handle
+      .submit_browser_command(browser_command(CommandAction::OpenRecording {
+        recording_id: recordings[0].id.clone(),
+      }))
+      .unwrap();
+
+    assert_eq!(acknowledgement.status, CommandStatus::Applied);
+    let sessions = handle.inner.sessions.read();
+    assert_eq!(sessions.len(), 1);
+    let replay = sessions.values().next().unwrap();
+    assert_eq!(replay.kind, SessionKind::Replay);
+    assert_eq!(replay.label, recordings[0].label);
+    assert_eq!(replay.live_frame, Some(7));
+    assert!(handle.inner.recording_paths.lock().contains_key(&replay.id));
+  }
+
+  #[tokio::test]
+  async fn import_rejects_a_filename_that_escapes_the_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let handle = handle_without_server(RecordingMode::Disk {
+      directory: directory.path().into(),
+    });
+
+    let response = import_recording(
+      Query(ImportRecordingQuery {
+        filename: "../escape.faabsrec".into(),
+      }),
+      State(Arc::clone(&handle.inner)),
+      Body::from("not a recording"),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(!directory.path().join("escape.faabsrec").exists());
   }
 
   #[test]
@@ -1239,6 +1994,108 @@ mod tests {
       .unwrap();
     assert_eq!(attached_again.system_ids, vec!["referris"]);
     assert_eq!(handle.bootstrap().sessions[0].system_ids, vec!["referris"]);
+  }
+
+  #[test]
+  fn seeking_a_detached_cursor_does_not_move_the_live_head() {
+    let dir = tempfile::tempdir().unwrap();
+    let handle = handle_without_server(RecordingMode::Disk {
+      directory: dir.path().into(),
+    });
+    let registered = handle
+      .register_system(system_descriptor("simhark"))
+      .unwrap();
+    let session = handle.create_session(
+      "recorded",
+      SessionKind::Simulation,
+      true,
+      vec!["simhark".into()],
+      1,
+    );
+    handle.start_recording(session.id).unwrap();
+    registered
+      .publisher
+      .publish(session.id, snapshot_at(4))
+      .unwrap();
+    registered
+      .publisher
+      .publish(session.id, snapshot_at(8))
+      .unwrap();
+    let live_frame = handle.bootstrap().sessions[0].live_frame;
+    let mut broadcasts = handle.inner.broadcast.subscribe();
+    let cursor = ViewerCursor {
+      id: Uuid::new_v4(),
+      session_id: session.id,
+      live: false,
+      frame: Some(4),
+      world_ids: vec![0],
+    };
+
+    let ack = handle
+      .submit_browser_command(cursor_command(session.id, cursor.clone()))
+      .unwrap();
+
+    assert_eq!(ack.status, CommandStatus::Applied);
+    assert_eq!(handle.bootstrap().sessions[0].live_frame, live_frame);
+    let sought = std::iter::from_fn(|| broadcasts.try_recv().ok()).find_map(|message| {
+      let ServerMessage::State(state) = message else {
+        return None;
+      };
+      (state.cursor_id == Some(cursor.id)).then_some(state)
+    });
+    assert_eq!(sought.unwrap().snapshot.worlds[0].frame, 4);
+  }
+
+  #[test]
+  fn seeking_an_unrecorded_session_is_rejected_with_a_message() {
+    let handle = handle_without_server(RecordingMode::Off);
+    let session = handle.create_session("unrecorded", SessionKind::Simulation, true, Vec::new(), 1);
+    let cursor = ViewerCursor {
+      id: Uuid::new_v4(),
+      session_id: session.id,
+      live: false,
+      frame: Some(12),
+      world_ids: vec![0],
+    };
+
+    let ack = handle
+      .submit_browser_command(cursor_command(session.id, cursor))
+      .unwrap();
+
+    assert_eq!(ack.status, CommandStatus::Rejected);
+    assert_eq!(
+      ack.message,
+      "session is not recorded, so it cannot be seeked"
+    );
+  }
+
+  #[test]
+  fn live_state_envelope_has_no_cursor_id() {
+    let handle = handle_without_server(RecordingMode::Off);
+    let registered = handle
+      .register_system(system_descriptor("simhark"))
+      .unwrap();
+    let session = handle.create_session(
+      "live",
+      SessionKind::Simulation,
+      true,
+      vec!["simhark".into()],
+      1,
+    );
+
+    registered
+      .publisher
+      .publish(session.id, snapshot_at(1))
+      .unwrap();
+
+    assert!(
+      handle
+        .inner
+        .snapshots
+        .read()
+        .values()
+        .all(|state| state.cursor_id.is_none())
+    );
   }
 
   #[tokio::test]

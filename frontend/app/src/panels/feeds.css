@@ -1,0 +1,81 @@
+.fd { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fd-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+.fd-bar .ui-input { max-width: 240px; }
+.fd-origin { margin-left: auto; font-size: var(--font-size-xs); }
+.fd-time { width: 104px; }
+.fd-message { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+.fd-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.fd-alert b { display: block; font-size: var(--font-size-sm); }
+.fd-alert span { display: block; font-size: var(--font-size-xs); color: var(--muted); line-height: 1.5; }
+.fd-alert i { font-style: normal; font-size: var(--font-size-xs); color: var(--dim); }
+.fd-alert--warn b { color: var(--warn); }
+.fd-alert--error b { color: var(--danger); }
+.fd-alert button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font-size: 15px;
+  cursor: pointer;
+}
+.fd-alert button:hover { color: var(--text); }
+
+/* ── timeline ────────────────────────────────────────────────────────── */
+
+.tl { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; }
+.tl-row { display: flex; align-items: center; gap: 10px; }
+.tl-row--actions .ui-input { max-width: 200px; }
+.tl-time { font-size: var(--font-size-xs); color: var(--dim); white-space: nowrap; }
+.tl-note { font-size: var(--font-size-xs); }
+
+.tl-track {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  cursor: pointer;
+}
+.tl-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.tl-ev {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: var(--muted);
+}
+.tl-ev--warn { background: var(--warn); }
+.tl-ev--error { background: var(--danger); }
+.tl-head {
+  position: absolute;
+  top: -5px;
+  width: 2px;
+  height: 20px;
+  background: var(--text);
+  transform: translateX(-50%);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--text) 60%, transparent);
+}
+
+.fd-selectable { cursor: pointer; }

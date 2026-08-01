@@ -1,0 +1,38 @@
+.wl-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 12px; }
+
+.wl-note {
+  padding: 6px 12px 10px;
+  color: var(--dim);
+  font-size: var(--font-size-xs);
+  line-height: 1.55;
+}
+.wl-note--error { color: var(--danger); }
+
+.wl-list { display: grid; gap: 2px; padding: 0 12px 10px; }
+.wl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.wl-row:hover { background: var(--surface-2); }
+.wl-row.is-focused { border-color: var(--accent); }
+.wl-row .ui-toggle { flex: 1; min-width: 0; }
+.wl-meta { font-size: var(--font-size-xs); color: var(--dim); white-space: nowrap; }
+
+.wl-focus {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.wl-focus:hover { color: var(--text); border-color: var(--muted); }
+.wl-focus.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

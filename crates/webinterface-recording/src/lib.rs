@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,8 @@ const INDEX_MAGIC: &[u8; 4] = b"INDX";
 const FORMAT_VERSION: u32 = 1;
 const DEFAULT_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 const DEFAULT_CHUNK_TIME: Duration = Duration::from_secs(1);
+const MAX_HEADER_BYTES: usize = 16 * 1024 * 1024;
+const MAX_INDEX_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub enum RecordingMode {
@@ -32,6 +34,16 @@ impl Default for RecordingMode {
   fn default() -> Self {
     Self::Disk {
       directory: PathBuf::from("recordings"),
+    }
+  }
+}
+
+impl RecordingMode {
+  pub fn directory(&self) -> Option<PathBuf> {
+    match self {
+      Self::Disk { directory } => Some(directory.clone()),
+      Self::Temp => Some(temp_recording_directory()),
+      Self::Memory { .. } | Self::Off => None,
     }
   }
 }
@@ -217,7 +229,7 @@ impl RecordingWriter {
         }
       }
       RecordingMode::Temp => {
-        let directory = std::env::temp_dir().join("faabs-recordings");
+        let directory = temp_recording_directory();
         fs::create_dir_all(&directory)?;
         let final_path = directory.join(format!("{}.faabsrec", sanitize_name(name)));
         let partial_path = final_path.with_extension("faabsrec.partial");
@@ -389,6 +401,320 @@ impl RecordingWriter {
   }
 }
 
+/// Reads a recording back at a requested frame.
+pub struct RecordingReader {
+  path: PathBuf,
+  reader: BufReader<File>,
+  header: RecordingHeader,
+  index: RecordingIndex,
+}
+
+impl RecordingReader {
+  /// Opens a finalised `.faabsrec` or a `.partial` still being written.
+  pub fn open(path: &Path) -> Result<Self, RecordingError> {
+    let mut reader = BufReader::new(File::open(path)?);
+    let (header, data_start) = read_header(&mut reader)?;
+    let partial = path
+      .file_name()
+      .is_some_and(|name| name.to_string_lossy().ends_with(".faabsrec.partial"));
+    let index = if partial {
+      match read_sidecar_index(path)? {
+        Some(index) => index,
+        None => scan_index(&mut reader, data_start)?,
+      }
+    } else {
+      read_final_index(&mut reader, data_start)?
+    };
+    Ok(Self {
+      path: path.to_owned(),
+      reader,
+      header,
+      index,
+    })
+  }
+
+  pub fn header(&self) -> &RecordingHeader {
+    &self.header
+  }
+
+  /// Lowest and highest frame numbers available, or `None` if empty.
+  pub fn frame_range(&self) -> Option<(u64, u64)> {
+    frame_range(&self.index)
+  }
+
+  /// The state of every system at `frame`, reconstructed from the newest
+  /// checkpoint at or before `frame` plus the deltas after it. Returns the
+  /// nearest available frame's state when `frame` falls in a gap, and
+  /// `Ok(vec![])` when the recording holds no state at all.
+  pub fn state_at(&mut self, frame: u64) -> Result<Vec<StateEnvelope>, RecordingError> {
+    self.refresh_partial_index()?;
+    let Some((first_frame, last_frame)) = self.frame_range() else {
+      return Ok(Vec::new());
+    };
+    let frame = frame.clamp(first_frame, last_frame);
+    let chunk_index = self
+      .index
+      .chunks
+      .iter()
+      .position(|chunk| chunk.last_frame.is_some_and(|last| last >= frame))
+      .or_else(|| {
+        self
+          .index
+          .chunks
+          .iter()
+          .rposition(|chunk| chunk.last_frame.is_some())
+      })
+      .expect("a frame range requires at least one state-bearing chunk");
+
+    let mut states = BTreeMap::new();
+    if chunk_index > 0 {
+      let payload = read_chunk(&mut self.reader, &self.index.chunks[chunk_index - 1])?;
+      for checkpoint in payload.checkpoints {
+        states.insert(checkpoint.system_id.clone(), checkpoint);
+      }
+      // Replaying the boundary chunk is idempotent when its checkpoint is the
+      // end state and also supports recordings whose checkpoint is the start
+      // state, without searching any earlier chunks.
+      apply_all_states(&mut states, payload.items);
+    }
+
+    let payload = read_chunk(&mut self.reader, &self.index.chunks[chunk_index])?;
+    apply_states_through_frame(&mut states, payload.items, frame);
+    Ok(states.into_values().collect())
+  }
+
+  fn refresh_partial_index(&mut self) -> Result<(), RecordingError> {
+    if let Some(index) = read_sidecar_index(&self.path)?
+      && index.chunks.len() >= self.index.chunks.len()
+    {
+      self.index = index;
+    }
+    Ok(())
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct RecordingInspection {
+  pub header: RecordingHeader,
+  pub index: RecordingIndex,
+}
+
+pub fn inspect_recording_header(path: impl AsRef<Path>) -> Result<RecordingHeader, RecordingError> {
+  let mut reader = BufReader::new(File::open(path)?);
+  let (header, _) = read_header(&mut reader)?;
+  Ok(header)
+}
+
+/// Reads only a recording's header, chunk headers, and final index.
+pub fn inspect_finalized_recording(
+  path: impl AsRef<Path>,
+) -> Result<RecordingInspection, RecordingError> {
+  let mut reader = BufReader::new(File::open(path)?);
+  let (header, data_start) = read_header(&mut reader)?;
+  let index = read_final_index(&mut reader, data_start)?;
+  Ok(RecordingInspection { header, index })
+}
+
+fn read_header(reader: &mut BufReader<File>) -> Result<(RecordingHeader, u64), RecordingError> {
+  reader.seek(SeekFrom::Start(0))?;
+  let mut magic = [0; 8];
+  reader.read_exact(&mut magic)?;
+  if &magic != MAGIC {
+    return Err(RecordingError::Invalid("bad magic".into()));
+  }
+  let header_len = read_u32(reader)? as usize;
+  if header_len > MAX_HEADER_BYTES {
+    return Err(RecordingError::Invalid("header is too large".into()));
+  }
+  let mut encoded = vec![0; header_len];
+  reader.read_exact(&mut encoded)?;
+  let header = rmp_serde::from_slice(&encoded)?;
+  Ok((header, reader.stream_position()?))
+}
+
+fn read_final_index(
+  reader: &mut BufReader<File>,
+  data_start: u64,
+) -> Result<RecordingIndex, RecordingError> {
+  reader.seek(SeekFrom::Start(data_start))?;
+  loop {
+    let mut marker = [0; 4];
+    reader
+      .read_exact(&mut marker)
+      .map_err(|error| match error.kind() {
+        io::ErrorKind::UnexpectedEof => {
+          RecordingError::Invalid("recording has no final index".into())
+        }
+        _ => error.into(),
+      })?;
+    if &marker == INDEX_MAGIC {
+      let index_len = read_u32(reader)? as usize;
+      if index_len > MAX_INDEX_BYTES {
+        return Err(RecordingError::Invalid("final index is too large".into()));
+      }
+      let mut encoded = vec![0; index_len];
+      reader.read_exact(&mut encoded)?;
+      return Ok(rmp_serde::from_slice(&encoded)?);
+    }
+    if &marker != CHUNK_MAGIC {
+      return Err(RecordingError::Invalid(
+        "unexpected data before final index".into(),
+      ));
+    }
+    let compressed_bytes = read_u32(reader)?;
+    let _uncompressed_bytes = read_u32(reader)?;
+    let _crc = read_u32(reader)?;
+    reader.seek(SeekFrom::Current(i64::from(compressed_bytes)))?;
+  }
+}
+
+fn read_sidecar_index(path: &Path) -> Result<Option<RecordingIndex>, RecordingError> {
+  let sidecar_path = path.with_extension("faabsrec.index.partial");
+  match fs::read(sidecar_path) {
+    Ok(bytes) => serde_json::from_slice(&bytes)
+      .map(Some)
+      .map_err(|error| RecordingError::Invalid(error.to_string())),
+    Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+    Err(error) => Err(error.into()),
+  }
+}
+
+fn scan_index(
+  reader: &mut BufReader<File>,
+  data_start: u64,
+) -> Result<RecordingIndex, RecordingError> {
+  reader.seek(SeekFrom::Start(data_start))?;
+  let mut chunks = Vec::new();
+  loop {
+    let offset = reader.stream_position()?;
+    let mut marker = [0; 4];
+    match reader.read_exact(&mut marker) {
+      Ok(()) => {}
+      Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+      Err(error) => return Err(error.into()),
+    }
+    if &marker == INDEX_MAGIC {
+      let len = read_u32(reader)? as usize;
+      let mut encoded = vec![0; len];
+      reader.read_exact(&mut encoded)?;
+      return Ok(rmp_serde::from_slice(&encoded)?);
+    }
+    if &marker != CHUNK_MAGIC {
+      break;
+    }
+    let compressed_bytes = read_u32(reader)?;
+    let uncompressed_bytes = read_u32(reader)?;
+    let _crc = read_u32(reader)?;
+    chunks.push(ChunkIndexEntry {
+      offset,
+      compressed_bytes,
+      uncompressed_bytes,
+      first_frame: None,
+      last_frame: None,
+      first_timestamp_ns: None,
+      last_timestamp_ns: None,
+    });
+    reader.seek(SeekFrom::Current(i64::from(compressed_bytes)))?;
+  }
+
+  // A partial file normally has a sidecar. Falling back to decoding each
+  // complete chunk keeps externally produced or recovered partials seekable.
+  for chunk in &mut chunks {
+    let payload = read_chunk(reader, chunk)?;
+    *chunk = index_entry(
+      chunk.offset,
+      chunk.compressed_bytes as usize,
+      chunk.uncompressed_bytes as usize,
+      &payload.items,
+    );
+  }
+  Ok(RecordingIndex {
+    chunks,
+    terminal_lifecycle: None,
+    terminal_error: None,
+  })
+}
+
+fn read_chunk(
+  reader: &mut BufReader<File>,
+  entry: &ChunkIndexEntry,
+) -> Result<ChunkPayload, RecordingError> {
+  reader.seek(SeekFrom::Start(entry.offset))?;
+  let mut marker = [0; 4];
+  reader.read_exact(&mut marker)?;
+  if &marker != CHUNK_MAGIC {
+    return Err(RecordingError::Invalid(
+      "indexed chunk has bad magic".into(),
+    ));
+  }
+  let compressed_len = read_u32(reader)? as usize;
+  let uncompressed_len = read_u32(reader)? as usize;
+  let crc = read_u32(reader)?;
+  if compressed_len != entry.compressed_bytes as usize
+    || uncompressed_len != entry.uncompressed_bytes as usize
+  {
+    return Err(RecordingError::Invalid(
+      "indexed chunk length does not match its header".into(),
+    ));
+  }
+  let mut compressed = vec![0; compressed_len];
+  reader.read_exact(&mut compressed)?;
+  if crc32fast::hash(&compressed) != crc {
+    return Err(RecordingError::Invalid(
+      "indexed chunk checksum does not match".into(),
+    ));
+  }
+  let raw = zstd::stream::decode_all(compressed.as_slice())?;
+  if raw.len() != uncompressed_len {
+    return Err(RecordingError::Invalid(
+      "indexed chunk decompressed to an unexpected length".into(),
+    ));
+  }
+  Ok(rmp_serde::from_slice(&raw)?)
+}
+
+fn frame_range(index: &RecordingIndex) -> Option<(u64, u64)> {
+  let first = index
+    .chunks
+    .iter()
+    .filter_map(|chunk| chunk.first_frame)
+    .min()?;
+  let last = index
+    .chunks
+    .iter()
+    .filter_map(|chunk| chunk.last_frame)
+    .max()?;
+  Some((first, last))
+}
+
+fn state_frame(state: &StateEnvelope) -> Option<u64> {
+  state.snapshot.worlds.iter().map(|world| world.frame).max()
+}
+
+fn apply_all_states(states: &mut BTreeMap<SystemId, StateEnvelope>, items: Vec<RecordedItem>) {
+  for item in items {
+    if let RecordedItem::State(state) = item {
+      states.insert(state.system_id.clone(), state);
+    }
+  }
+}
+
+fn apply_states_through_frame(
+  states: &mut BTreeMap<SystemId, StateEnvelope>,
+  items: Vec<RecordedItem>,
+  frame: u64,
+) {
+  for item in items {
+    let RecordedItem::State(state) = item else {
+      continue;
+    };
+    if state_frame(&state).is_some_and(|state_frame| state_frame > frame) {
+      continue;
+    }
+    states.insert(state.system_id.clone(), state);
+  }
+}
+
 pub fn read_recording(path: impl AsRef<Path>) -> Result<RecoveredRecording, RecordingError> {
   let mut reader = BufReader::new(File::open(path)?);
   let mut magic = [0; 8];
@@ -536,6 +862,10 @@ fn sanitize_name(name: &str) -> String {
   }
 }
 
+fn temp_recording_directory() -> PathBuf {
+  std::env::temp_dir().join("faabs-recordings")
+}
+
 // Howard Hinnant's civil-from-days conversion, with day zero at the Unix
 // epoch. Keeping this local avoids pulling a clock/time-zone dependency into
 // the recording hot path; recording directory names are always UTC.
@@ -584,11 +914,22 @@ mod tests {
       sequence: frame + 1,
       published_at_ns: TimestampNs(frame * 1_000_000),
       snapshot: webinterface_protocol::SystemSnapshot {
-        worlds: Vec::new(),
+        worlds: vec![webinterface_protocol::WorldState {
+          world_id: 0,
+          frame,
+          simulation_time_ns: TimestampNs(frame * 1_000_000),
+          field: webinterface_protocol::FieldGeometry::default(),
+          ball: None,
+          robots: Vec::new(),
+          referee: None,
+          score: webinterface_protocol::Score { blue: 0, yellow: 0 },
+          events: Vec::new(),
+        }],
         debug_layers: Vec::new(),
         debug_items: Vec::new(),
         properties: BTreeMap::new(),
       },
+      cursor_id: None,
     })
   }
 
@@ -665,6 +1006,64 @@ mod tests {
       assert_eq!(recovered.index.terminal_lifecycle, Some(lifecycle));
       assert!(!recovered.truncated);
     }
+  }
+
+  #[test]
+  fn recording_reader_reconstructs_state_at_a_past_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = session();
+    let header = RecordingHeader::new(PROTOCOL_VERSION, 1, "test-build", session.clone());
+    let mut writer = RecordingWriter::create(
+      RecordingMode::Disk {
+        directory: dir.path().into(),
+      },
+      header,
+      "reader-past-frame",
+    )
+    .unwrap();
+    for frame in [10, 20, 30] {
+      writer.append(state_item(session.id, frame)).unwrap();
+      writer.flush_boundary().unwrap();
+    }
+    let path = writer
+      .finalize(SessionLifecycle::Completed, None)
+      .unwrap()
+      .unwrap();
+
+    let mut reader = RecordingReader::open(&path).unwrap();
+    assert_eq!(reader.frame_range(), Some((10, 30)));
+    let states = reader.state_at(20).unwrap();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].snapshot.worlds[0].frame, 20);
+  }
+
+  #[test]
+  fn state_at_handles_a_frame_between_checkpoints() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = session();
+    let header = RecordingHeader::new(PROTOCOL_VERSION, 1, "test-build", session.clone());
+    let mut writer = RecordingWriter::create(
+      RecordingMode::Disk {
+        directory: dir.path().into(),
+      },
+      header,
+      "reader-between-checkpoints",
+    )
+    .unwrap();
+    writer.append(state_item(session.id, 10)).unwrap();
+    writer.flush_boundary().unwrap();
+    writer.append(state_item(session.id, 20)).unwrap();
+    writer.append(state_item(session.id, 30)).unwrap();
+    writer.flush_boundary().unwrap();
+    let path = writer
+      .finalize(SessionLifecycle::Completed, None)
+      .unwrap()
+      .unwrap();
+
+    let mut reader = RecordingReader::open(&path).unwrap();
+    let states = reader.state_at(25).unwrap();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].snapshot.worlds[0].frame, 20);
   }
 
   #[test]

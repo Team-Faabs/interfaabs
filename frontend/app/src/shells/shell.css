@@ -1,0 +1,185 @@
+.shell {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  background: var(--app-bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size);
+  overflow: hidden;
+}
+.shell > * { min-width: 0; }
+.shell-grow { flex: 1; }
+
+/* Evolved: dense bar, dock, status line. */
+.shell--evolved { grid-template-rows: calc(var(--control-h) + 16px) 1fr 24px; }
+/* Brief: header, one line of context, dock, permanent timeline. */
+.shell--brief { grid-template-rows: calc(var(--control-h) + 24px) 30px 1fr 40px; }
+
+.shell-body { display: flex; min-height: 0; min-width: 0; padding: 6px; gap: 6px; }
+.shell--brief .shell-body { padding: 10px; }
+
+/* Review mode changes the whole shell, not just a badge. */
+.shell.is-review { box-shadow: inset 0 0 0 2px var(--warn); }
+.shell.is-review .tb { background: color-mix(in srgb, var(--warn) 14%, var(--chrome-bg)); }
+
+/* ── brief subhead ───────────────────────────────────────────────────── */
+
+.shell-subhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--font-size-sm);
+  background: var(--chrome-bg);
+}
+.shell-subhead b { font-weight: 600; }
+.shell-subhead > span { color: var(--dim); }
+.shell-subnote { color: var(--muted); font-size: var(--font-size-xs); }
+.shell-subnote--warn { color: var(--warn); }
+
+/* ── evolved status bar ──────────────────────────────────────────────── */
+
+.shell-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  overflow: hidden;
+}
+.shell-status b { color: var(--text); font-weight: 600; }
+.shell-mode {
+  padding: 0 8px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.shell-mode.is-review { background: var(--warn); color: var(--warn-ink); }
+
+.shell-token {
+  max-width: 340px;
+  height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.shell-token:hover { color: var(--text); }
+
+/* ── brief footer timeline ───────────────────────────────────────────── */
+
+.shell-brieffoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.shell-foot-time { font-size: var(--font-size-xs); color: var(--dim); white-space: nowrap; }
+.shell-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  cursor: pointer;
+}
+.shell-track-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.shell-track-head {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+/* ── banners and toasts ──────────────────────────────────────────────── */
+
+.shell-banner {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(720px, 90vw);
+  padding: 8px 14px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: var(--font-size-sm);
+}
+.shell-banner b { color: var(--warn); }
+.shell-banner span { color: var(--muted); font-size: var(--font-size-xs); }
+.shell-banner--error { border-color: var(--danger); }
+.shell-banner--error b { color: var(--danger); }
+.shell-banner button {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.shell-toasts {
+  position: absolute;
+  right: 14px;
+  bottom: 44px;
+  z-index: 65;
+  display: grid;
+  gap: 6px;
+  width: 320px;
+}
+.shell-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.shell-toast--error { border-color: var(--danger); }
+.shell-toast b { display: block; font-size: var(--font-size-sm); color: var(--warn); }
+.shell-toast--error b { color: var(--danger); }
+.shell-toast span { display: block; font-size: var(--font-size-xs); color: var(--muted); line-height: 1.5; }
+.shell-toast i { font-style: normal; font-size: var(--font-size-xs); color: var(--dim); }
+.shell-toast button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font-size: 15px;
+  cursor: pointer;
+}
