@@ -5,7 +5,8 @@
   "scripts": {
     "build": "pnpm --filter @faabs/interface-app build",
     "dev": "pnpm --filter @faabs/interface-app dev",
-    "typecheck": "pnpm --filter @faabs/interface-app typecheck"
+    "typecheck": "pnpm --filter @faabs/interface-app typecheck",
+    "test": "pnpm --filter @faabs/interface-app test"
   }
 }
 
