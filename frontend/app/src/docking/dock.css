@@ -93,6 +93,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .dock-strip-btn:hover { background: var(--surface-3); color: var(--text); }
+/* Closing a pane takes its panels with it, so it reads as destructive. */
+.dock-strip-btn--close:hover { background: var(--danger); color: var(--danger-ink); }
 
 /* Portalled to the document body and positioned against the viewport by
    `placeMenu` in Dock.tsx: the tab strip and the dock cells clip overflow, so a

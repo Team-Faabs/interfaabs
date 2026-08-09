@@ -14,10 +14,12 @@ import { createPortal } from 'react-dom'
 import {
   addTab,
   allTabs,
+  countPanes,
   moveTab,
   openPanel,
   panel as makePanel,
   removeTab,
+  removeTabset,
   setActiveTab,
   setSizes,
   setTabPopped,
@@ -138,14 +140,40 @@ export function DockView({
           }
         }
 
-        const relX = (x - rect.left) / rect.width
+        // The icon rail is this tabset's tab strip, so a drop on it joins the
+        // rail rather than splitting it — the same gesture as a horizontal
+        // strip, minus the reordering a rail has no room to show. The edge
+        // bands below are then measured across the body alone, or the strip
+        // would swallow most of the band on the side it sits on.
+        const rail = element.querySelector<HTMLElement>('.dock-strip--rail')
+        let from = rect.left
+        let to = rect.right
+        if (rail) {
+          const railRect = rail.getBoundingClientRect()
+          if (x >= railRect.left && x <= railRect.right) {
+            best = { tabsetId: id, zone: 'center', area }
+            continue
+          }
+          if (railRect.left <= rect.left + 1) from = railRect.right
+          else to = railRect.left
+        }
+
+        const relX = (x - from) / Math.max(1, to - from)
         const relY = (y - rect.top) / rect.height
-        const candidates: Array<[DropZone, number]> = [
-          ['left', relX],
-          ['right', 1 - relX],
-          ['top', relY],
-          ['bottom', 1 - relY],
-        ]
+        // A rail spans its whole side, so stacking a panel above or below one
+        // would have to squeeze it into the rail's fixed width. Only its sides
+        // split; the rest of it takes the panel as a tab.
+        const candidates: Array<[DropZone, number]> = rail
+          ? [
+              ['left', relX],
+              ['right', 1 - relX],
+            ]
+          : [
+              ['left', relX],
+              ['right', 1 - relX],
+              ['top', relY],
+              ['bottom', 1 - relY],
+            ]
         candidates.sort((a, b) => a[1] - b[1])
         const zone: DropZone = candidates[0][1] < 0.22 ? candidates[0][0] : 'center'
         best = { tabsetId: id, zone, area }
@@ -412,6 +440,9 @@ function TabStrip({
   const railed = node.rail !== null
   const active = node.tabs.find((tab) => tab.id === node.activeTabId) ?? null
   const descriptor = active ? registry[active.panel] : null
+  // The last ordinary pane keeps its close button hidden: closing it would
+  // leave a workspace of nothing but rails, with no pane to open panels into.
+  const closable = !railed && countPanes(root) > 1
 
   const select = (instance: PanelInstance) => {
     // Clicking the active tab of a rail collapses the dock, per the plan.
@@ -479,6 +510,16 @@ function TabStrip({
               </button>
             )}
             <AddPanelButton tabsetId={node.id} />
+            {closable && (
+              <button
+                className="dock-strip-btn dock-strip-btn--close"
+                title="Close this pane and every panel in it"
+                aria-label="Close pane"
+                onClick={() => change(removeTabset(root, node.id))}
+              >
+                ✕
+              </button>
+            )}
           </div>
         </>
       )}

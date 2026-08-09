@@ -4,13 +4,17 @@ import { describe, it } from 'vitest'
 import {
   addTab,
   allTabs,
+  countPanes,
   dropInto,
+  findTabset,
   findTabsetOfTab,
   isValidNode,
   moveTab,
+  normaliseLayout,
   openPanel,
   panel,
   removeTab,
+  removeTabset,
   setActiveTab,
   setTabPopped,
   split,
@@ -182,5 +186,86 @@ describe('dropInto', () => {
 
     const belowTarget = dropInto(root, target.id, panel('events'), 'bottom')
     assert.equal(allTabs(belowTarget).length, 3)
+  })
+
+  it('drops beside a rail rather than wrapping it, and pays the new pane', () => {
+    const { rail, field, bottom, root } = liveOps()
+    const next = dropInto(root, rail.id, panel('tests'), 'left') as DockSplit
+
+    assert.equal(next.kind, 'split')
+    assert.equal(next.children.length, 3, 'the rail stays a direct child of the row')
+    const at = next.children.findIndex(
+      (child) => child.kind === 'tabs' && child.tabs[0]?.panel === 'tests',
+    )
+    assert.equal(at, 0, 'a left drop lands outside the rail')
+    assert.equal(next.children[1].id, rail.id)
+    // Zero would render the pane zero pixels wide, with no splitter to drag it
+    // back out by, and the rail must stay on its own pixel sizing.
+    assert.ok(next.sizes[at] > 0.3 && next.sizes[at] < 0.4, `share was ${next.sizes[at]}`)
+    assert.equal(next.sizes[1], 0)
+    assert.ok(findTabset(next, field.id) && findTabset(next, bottom.id))
+  })
+
+  it('drops on the inner side of a rail when aimed there', () => {
+    const { rail, root } = liveOps()
+    const next = dropInto(root, rail.id, panel('tests'), 'right') as DockSplit
+
+    assert.equal(next.children[0].id, rail.id)
+    assert.equal(
+      next.children[1].kind === 'tabs' && next.children[1].tabs[0].panel,
+      'tests',
+    )
+  })
+})
+
+describe('removeTabset', () => {
+  it('closes a pane and hands its space back to the sibling', () => {
+    const { field, bottom, root } = liveOps()
+    const next = removeTabset(root, bottom.id)
+
+    assert.equal(findTabset(next, bottom.id), null)
+    assert.equal(findTabset(next, field.id)?.id, field.id)
+    assert.equal(countPanes(next), 1, 'the rail is chrome, not a pane')
+
+    let columns = 0
+    walkNodes(next, (node) => {
+      if (node.kind === 'split' && node.direction === 'column') columns += 1
+    })
+    assert.equal(columns, 0, 'the split around the closed pane must dissolve')
+  })
+
+  it('leaves an empty pane behind when the only one closes', () => {
+    const solo = tabs([panel('field')])
+    const next = removeTabset(solo, solo.id)
+
+    assert.equal(allTabs(next).length, 0)
+    assert.equal(next.kind, 'tabs')
+  })
+})
+
+describe('normaliseLayout', () => {
+  it('rescues a pane a stored layout starved of its share', () => {
+    const rail = tabs([panel('systems')], { rail: 'left', railWidth: 260 })
+    const starved = tabs([panel('tests')])
+    const field = tabs([panel('field')])
+    // What splitting a rail used to write: the wrapper inherits the rail's
+    // nothing, so every pane inside it renders zero pixels wide.
+    const stored: DockNode = {
+      kind: 'split',
+      id: 'root',
+      direction: 'row',
+      sizes: [0, 1],
+      children: [
+        { kind: 'split', id: 'wrap', direction: 'row', sizes: [0.34, 0.66], children: [starved, rail] },
+        field,
+      ],
+    }
+
+    const next = normaliseLayout(stored) as DockSplit
+    const at = next.children.findIndex((child) => child.id === starved.id)
+
+    assert.equal(next.kind, 'split')
+    assert.ok(at >= 0, 'the pane survives the repair')
+    assert.ok(next.sizes[at] > 0.1, `share was ${next.sizes[at]}`)
   })
 })

@@ -1,7 +1,7 @@
 // Versioned local-storage persistence with migration, corrupt-state recovery
 // and workspace import/export.
 
-import { isValidNode } from '../docking/model'
+import { isValidNode, normaliseLayout } from '../docking/model'
 import {
   CONFIG_VERSION,
   DEFAULT_FIELD_SETTINGS,
@@ -90,8 +90,11 @@ function reconcile(value: Record<string, unknown>): AppConfig {
           const builtinDefault = base.workspaces.find((w) => w.id === workspace.id)
           return {
             ...workspace,
+            // Tidied on the way in: a layout stored by an older build may hold a
+            // pane with no share of its split, which renders zero pixels wide
+            // and cannot be dragged back into view.
             layout: isValidNode(workspace.layout)
-              ? workspace.layout
+              ? normaliseLayout(workspace.layout)
               : (builtinDefault?.layout ?? base.workspaces[1].layout),
             topBar: Array.isArray(workspace.topBar)
               ? workspace.topBar.filter((item) => typeof item?.id === 'string')

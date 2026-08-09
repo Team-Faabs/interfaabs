@@ -51,6 +51,9 @@ export interface Layout {
 
 export type DropZone = 'center' | 'left' | 'right' | 'top' | 'bottom'
 
+/** Share of a split's flexible space handed to a pane dropped on its edge. */
+const NEW_PANE_SHARE = 0.34
+
 let counter = 0
 export function nextId(prefix: string): string {
   counter += 1
@@ -87,7 +90,7 @@ export function split(
     id: nextId('split'),
     direction,
     children,
-    sizes: normalise(sizes ?? children.map(() => 1 / children.length), children.length),
+    sizes: shareSizes(children, sizes ?? children.map(() => 1 / children.length)),
   }
 }
 
@@ -102,6 +105,38 @@ function normalise(sizes: number[], count: number): number[] {
   const filled = Array.from({ length: count }, (_, index) => sizes[index] ?? 1 / count)
   const total = filled.reduce((sum, value) => sum + value, 0)
   return total > 0 ? filled.map((value) => value / total) : filled.map(() => 1 / count)
+}
+
+/** Railed tabsets are laid out in pixels by the view, not by split fraction. */
+function isRailed(node: DockNode): boolean {
+  return node.kind === 'tabs' && node.rail !== null
+}
+
+/**
+ * Normalises a split's sizes, holding railed children at no share — they are
+ * sized in pixels — and rescuing any flexible child that ended up with none.
+ *
+ * A flexible child with no share renders zero pixels wide, which also leaves no
+ * splitter to drag it back out with: it is gone for good. That is exactly what
+ * splitting a rail used to produce, since the rail has no share to divide.
+ */
+function shareSizes(children: DockNode[], sizes: number[]): number[] {
+  const raw = children.map((child, index) =>
+    isRailed(child) ? 0 : Math.max(0, sizes[index] ?? 1 / children.length),
+  )
+  const flexible = children.filter((child) => !isRailed(child)).length
+  if (flexible === 0) return raw
+
+  const starved = raw.filter((size, index) => !isRailed(children[index]) && size <= 0).length
+  if (starved > 0) {
+    const total = raw.reduce((sum, size) => sum + size, 0)
+    const each =
+      total > 0 ? (total * NEW_PANE_SHARE) / (1 - NEW_PANE_SHARE) / starved : 1 / starved
+    raw.forEach((size, index) => {
+      if (!isRailed(children[index]) && size <= 0) raw[index] = each
+    })
+  }
+  return normalise(raw, children.length)
 }
 
 // ── queries ──────────────────────────────────────────────────────────────
@@ -135,6 +170,15 @@ export function findTabsetOfTab(node: DockNode, tabId: string): DockTabs | null 
     }
   })
   return found
+}
+
+/** Counts the ordinary panes; rails are chrome and are never counted. */
+export function countPanes(node: DockNode): number {
+  let total = 0
+  walk(node, (current) => {
+    if (current.kind === 'tabs' && current.rail === null) total += 1
+  })
+  return total
 }
 
 export function hasPanelType(node: DockNode, panelType: PanelTypeId): boolean {
@@ -190,11 +234,20 @@ function prune(node: DockNode): DockNode | null {
     }
   })
 
-  return { ...node, children: flattened, sizes: normalise(flatSizes, flattened.length) }
+  return { ...node, children: flattened, sizes: shareSizes(flattened, flatSizes) }
 }
 
 function finish(node: DockNode | null): DockNode {
   return node ?? tabs([])
+}
+
+/**
+ * Tidies a whole tree: drops empty tabsets, dissolves splits that no longer
+ * branch and repairs shares. Run over persisted layouts, which may have been
+ * written by a build whose splits could starve a pane of its share.
+ */
+export function normaliseLayout(root: DockNode): DockNode {
+  return finish(prune(root))
 }
 
 export function setTabPopped(root: DockNode, tabId: string, popped: boolean): DockNode {
@@ -241,6 +294,28 @@ export function removeTab(root: DockNode, tabId: string): DockNode {
   return finish(prune(stripped))
 }
 
+/** Removes `targetId` and its subtree wherever it sits below `node`. */
+function dropChild(node: DockNode, targetId: string): DockNode {
+  if (node.kind !== 'split') return node
+  const children: DockNode[] = []
+  const sizes: number[] = []
+  node.children.forEach((child, index) => {
+    if (child.id === targetId) return
+    children.push(dropChild(child, targetId))
+    sizes.push(node.sizes[index] ?? 1 / node.children.length)
+  })
+  return { ...node, children, sizes }
+}
+
+/**
+ * Closes a whole pane — every tab in it — and dissolves the split around it, so
+ * its space goes back to the sibling it was taken from.
+ */
+export function removeTabset(root: DockNode, tabsetId: string): DockNode {
+  if (root.id === tabsetId) return tabs([])
+  return finish(prune(dropChild(root, tabsetId)))
+}
+
 export function addTab(
   root: DockNode,
   tabsetId: string,
@@ -253,6 +328,40 @@ export function addTab(
     nextTabs.splice(index ?? nextTabs.length, 0, instance)
     return { ...node, tabs: nextTabs, activeTabId: instance.id }
   })
+}
+
+/**
+ * Splices `node` in beside `siblingId` within its parent split. Returns null if
+ * the sibling is the root, or its parent runs the other way.
+ */
+function insertBeside(
+  root: DockNode,
+  siblingId: string,
+  node: DockNode,
+  direction: 'row' | 'column',
+  before: boolean,
+): DockNode | null {
+  let placed = false
+  const next = mapNode(root, (current) => {
+    if (placed || current.kind !== 'split' || current.direction !== direction) return current
+    const at = current.children.findIndex((child) => child.id === siblingId)
+    if (at < 0) return current
+    placed = true
+
+    // Sized against the flexible space only, so the new pane takes its share
+    // from the panels beside it rather than from the pixel-sized rails.
+    const flexible = current.children.reduce(
+      (sum, child, index) => sum + (isRailed(child) ? 0 : (current.sizes[index] ?? 0)),
+      0,
+    )
+    const children = [...current.children]
+    const sizes = [...current.sizes]
+    const insertAt = before ? at : at + 1
+    children.splice(insertAt, 0, node)
+    sizes.splice(insertAt, 0, (flexible * NEW_PANE_SHARE) / (1 - NEW_PANE_SHARE))
+    return { ...current, children, sizes: shareSizes(children, sizes) }
+  })
+  return placed ? next : null
 }
 
 /**
@@ -270,15 +379,28 @@ export function dropInto(
 
   const direction: 'row' | 'column' = zone === 'left' || zone === 'right' ? 'row' : 'column'
   const before = zone === 'left' || zone === 'top'
+  const target = findTabset(root, tabsetId)
 
-  return mapNode(root, (node) => {
+  // A rail is sized in pixels and holds no share of its split, so wrapping one
+  // would hand the new pane that same nothing and render it zero pixels wide.
+  // Drop beside the rail in its parent instead, where there is space to take.
+  if (target && target.rail !== null) {
+    const beside = insertBeside(root, tabsetId, tabs([instance]), direction, before)
+    if (beside) return finish(prune(beside))
+  }
+
+  const next = mapNode(root, (node) => {
     if (node.kind !== 'tabs' || node.id !== tabsetId) return node
-    // The new tabset inherits nothing from the rail: a panel dropped beside a
+    // The new tabset inherits nothing from the target: a panel dropped beside a
     // rail becomes a normal tabset, otherwise two rails would stack.
     const created = tabs([instance])
     const children = before ? [created, node] : [node, created]
-    return split(direction, children, [0.34, 0.66].slice(0, 2))
+    const shares = before
+      ? [NEW_PANE_SHARE, 1 - NEW_PANE_SHARE]
+      : [1 - NEW_PANE_SHARE, NEW_PANE_SHARE]
+    return split(direction, children, shares)
   })
+  return finish(prune(next))
 }
 
 export function moveTab(
