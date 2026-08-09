@@ -1,8 +1,0 @@
-version: v2
-inputs:
-  - directory: proto
-plugins:
-  - remote: buf.build/protocolbuffers/go:v1.31.0
-    out: gen/proto
-    opt:
-      - module=github.com/technulgy-lgnu/crashpilot-interface

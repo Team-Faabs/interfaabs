@@ -1,0 +1,20 @@
+syntax = "proto2";
+
+option go_package = "github.com/technulgy-lgnu/interfaabs";
+
+// The packet the robot should send back
+message Robot_CP {
+  required uint32 robot_id = 1;
+
+  optional float battery_voltage = 2;
+
+  required bool kicker_ready = 3;
+  required bool has_ball = 4;
+
+  optional string error_msg = 5;
+
+  optional bool acting = 6;
+  optional uint32 last_rec_packet = 7;
+
+  required double timestamp = 9;
+}

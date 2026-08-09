@@ -1,0 +1,96 @@
+.lab {
+  display: flex;
+  flex-direction: column;
+}
+
+.lab-match {
+  display: grid;
+  gap: 8px;
+  padding: 4px 12px 10px;
+}
+
+.lab-registry {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lab-schema {
+  height: 100%;
+}
+
+/* The renderer's own footer is a right-aligned flex row, so a shrink-to-fit bar
+   sat wherever the status text happened to end — it slid sideways every time
+   the run changed state, and overflowed off the left edge once the panel was
+   narrow enough. Strip the slot's chrome and let the bar own the full width. */
+.lab .lab-footer-slot {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.lab-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  /* Darker than --surface-2, which is what a neutral button is filled with:
+     on the old surface the Load button read as a bare outline. */
+  background: var(--bg);
+}
+
+/* Four buttons do not fit a docked sidebar in one row, so let them wrap rather
+   than run out of the panel. */
+.lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lab-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.lab-status-state {
+  color: var(--text);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Takes the free space so the frame counter keeps the same edge whatever the
+   message says, and drops to a second line before it is squeezed away. */
+.lab-status-message {
+  flex: 1 1 12ch;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-status--failed .lab-status-message {
+  color: var(--danger);
+}
+
+.lab-status-frames {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.lab-note {
+  padding: 10px 12px;
+  color: var(--warn);
+  font-size: var(--font-size-xs);
+  line-height: 1.55;
+}

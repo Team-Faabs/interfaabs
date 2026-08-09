@@ -1,0 +1,20 @@
+{
+  "name": "interfaabs-mockups",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Disposable Phase 2 Live Operations UI checkpoint. Not part of the build.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.2.0"
+  }
+}

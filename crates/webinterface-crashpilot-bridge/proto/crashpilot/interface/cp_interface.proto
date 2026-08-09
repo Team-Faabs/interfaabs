@@ -1,0 +1,167 @@
+syntax = "proto2";
+
+import "crashpilot/cp_robot/cp_cp_robot.proto";
+import "state/ssl_gc_referee_message.proto";
+import "vision_tracked/messages_robocup_ssl_wrapper.proto";
+import "vision_tracked/messages_robocup_ssl_wrapper_tracked.proto";
+
+option go_package = "github.com/technulgy-lgnu/interfaabs";
+
+// buf:lint:ignore MESSAGE_PASCAL_CASE
+message CP_InterfaceWrapper {
+  optional SSL_WrapperPacket vision_raw = 1;
+  optional TrackerWrapperPacket vision_tracked = 2;
+
+  optional Referee gc_data = 3;
+
+  repeated CP_Robot robot_commands = 4;
+
+  optional CP_GamePhase cp_gamephase = 5;
+
+  // Latest frame from every discovered raw camera and tracked source. The
+  // legacy fields above remain populated for backwards compatibility.
+  repeated SSL_WrapperPacket vision_raw_sources = 6;
+  repeated TrackerWrapperPacket vision_tracked_sources = 7;
+  optional TrackerWrapperPacket vision_filtered = 8;
+  optional CP_WorldModelQuality world_model_quality = 9;
+}
+
+message CP_WorldModelQuality {
+  required double timestamp = 1;
+  optional CP_EntityQuality ball = 2;
+  repeated CP_EntityQuality robots = 3;
+}
+
+message CP_EntityQuality {
+  optional uint32 robot_id = 1;
+  optional int32 team = 2;
+  required bool valid = 3;
+  required float overall_confidence = 4;
+  required float measurement_age_s = 5;
+  optional CP_VectorQuality position = 6;
+  optional CP_VectorQuality velocity = 7;
+  optional CP_AngularQuality heading = 8;
+  optional float trajectory_confidence = 9;
+  optional CP_VectorQuality prediction_100ms = 10;
+  optional CP_VectorQuality prediction_250ms = 11;
+  optional CP_VectorQuality prediction_500ms = 12;
+}
+
+message CP_VectorQuality {
+  required float confidence = 1;
+  required float covariance_xx = 2;
+  required float covariance_xy = 3;
+  required float covariance_yy = 4;
+  required float p95_major_radius = 5;
+  required float p95_minor_radius = 6;
+  required float p95_angle_rad = 7;
+  required float p95_x_min = 8;
+  required float p95_x_max = 9;
+  required float p95_y_min = 10;
+  required float p95_y_max = 11;
+}
+
+message CP_AngularQuality {
+  required float confidence = 1;
+  required float variance_deg2 = 2;
+  required float p95_half_width_deg = 3;
+  required float p95_lower_deg = 4;
+  required float p95_upper_deg = 5;
+  required bool p95_wraps_zero = 6;
+}
+
+message CP_GamePhase {
+  enum GamePhase {
+    UNKNOWN_GamePhase = 0;
+
+    Halted = 1;
+    Stopped = 2;
+
+    Running = 3;
+    Timeout = 4;
+    BallPlacement = 5;
+  }
+  enum PrepPhase {
+    UNKNOWN_PrepPhase = 0;
+
+    OffensiveKickoff = 1;
+    DefensiveKickoff = 2;
+
+    OffensivePenalty = 3;
+    DefensivePenalty = 4;
+
+    OffensiveFreeKick = 5;
+    DefensiveFreeKick = 6;
+  }
+
+  optional GamePhase game_phase = 1;
+  optional PrepPhase prep_phase = 2;
+}
+
+// buf:lint:ignore MESSAGE_PASCAL_CASE
+message InterfaceWrapper_CP {
+  repeated InterfaceRobotCommands_CP robot_commands = 1;
+  required InterfaceCommand_CP interface_command = 2;
+}
+
+// buf:lint:ignore MESSAGE_PASCAL_CASE
+message InterfaceRobotCommands_CP {
+  required uint32 robot_id = 1;
+  required CP_Command command = 2;
+}
+
+// buf:lint:ignore MESSAGE_PASCAL_CASE
+message InterfaceCommand_CP {
+  required CpMode mode = 1;
+  required InterfaceManual_CP manual = 2;
+  required InterfaceGame_CP game = 3;
+  required InterfaceTest_CP test = 4;
+  // Set the side. false for x+, true for x-
+  required bool side = 5;
+  // Set the team color. False for Yellow, true for Blue
+  required bool team_color = 6;
+}
+
+message InterfaceManual_CP {
+  // You can decide which quadrant the robot should use to test
+  // 0: -x +y || 1: +x +y || 2: +x -y || 3: -x -y
+  required bool enable_testfield = 1;
+  required uint32 testfield = 2;
+  // You can tell CP to use the raw ball data with a simple consistency filter
+  // The tracked vision doesn't work that good with multiple balls, so for testing we can switch to the raw vision
+  required bool ball_tracked = 3;
+  // Enable listening to the game controller data, for testing you can switch it off to test the behaviour without the game controller data
+  required bool gc_data = 4;
+}
+
+message InterfaceGame_CP {
+  // Start or Stop
+  required bool running = 1;
+  // Set the robot, that should be goalkeeper
+  required uint32 goalkeeper_id = 4;
+  // Set the max speed for the game in mm/s, 0 for unlimited
+  required uint32 max_speed = 5;
+}
+
+message InterfaceTest_CP {
+  // Set the test, that should be executed
+  required CPTests test = 2;
+  // Select the robots, that should be used for the test
+  repeated uint32 robot_ids = 3;
+}
+
+enum CPTests {
+  TEST_NONE = 0;
+  TEST_BALL_CONTROL = 1;
+  TEST_DRIBBLER = 2;
+  TEST_KICKER = 3;
+  MODE_GOAL_SHOOT = 4;
+  MODE_GOALIE = 5;
+  MODE_GOALIE_AND_SHOOT = 6;
+}
+
+enum CpMode {
+  MODE_MANUAL = 0;
+  MODE_GAME = 1;
+  MODE_TEST = 2;
+}

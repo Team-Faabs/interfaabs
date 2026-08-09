@@ -1,0 +1,12 @@
+{
+  "name": "interfaabs",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "pnpm --filter @faabs/interfaabs build",
+    "dev": "pnpm --filter @faabs/interfaabs dev",
+    "typecheck": "pnpm --filter @faabs/interfaabs typecheck",
+    "test": "pnpm --filter @faabs/interfaabs test"
+  }
+}
+

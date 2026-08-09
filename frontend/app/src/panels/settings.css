@@ -1,0 +1,142 @@
+.set { display: flex; flex: 1; min-height: 0; }
+
+.set-nav {
+  flex: none;
+  width: 148px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 6px;
+  gap: 2px;
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.set-nav button {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.set-nav button:hover { background: var(--surface-3); color: var(--text); }
+.set-nav button.is-active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+.set-body { padding: 18px 22px 28px; }
+.set-body h2 {
+  margin: 0 0 6px;
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.set-body h2:not(:first-child) { margin-top: 26px; }
+.set-hint {
+  margin: 0 0 12px;
+  max-width: 66ch;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.set-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.set-card {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-card:hover { border-color: var(--muted); }
+.set-card.is-active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.set-card b { display: block; margin-bottom: 4px; font-size: var(--font-size); }
+.set-card span { display: block; color: var(--dim); font-size: var(--font-size-xs); line-height: 1.55; }
+
+.set-swatches { display: flex; gap: 3px; margin-bottom: 8px; }
+.set-swatches i { width: 18px; height: 18px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
+
+.set-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-width: 620px; }
+.set-toggles { display: grid; gap: 3px; margin-top: 10px; max-width: 440px; }
+
+.set-list { display: grid; gap: 3px; max-width: 620px; }
+.set-listrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.set-listrow.is-active { border-color: var(--accent); }
+.set-listrow .ui-toggle { flex: none; }
+.set-listlabel { flex: 1; min-width: 0; font-size: var(--font-size-sm); }
+.set-listmain {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-listmain b { display: block; font-size: var(--font-size-sm); }
+.set-listmain i { font-style: normal; font-size: var(--font-size-xs); color: var(--dim); }
+
+.set-chord {
+  min-width: 130px;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.set-chord:hover { border-color: var(--muted); }
+.set-chord.is-capturing {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.set-chips { display: flex; flex-wrap: wrap; gap: 5px; max-width: 620px; }
+.set-chip {
+  padding: 3px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.set-chip:hover { border-style: solid; border-color: var(--accent); color: var(--text); }
+
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.set-error { margin-top: 10px; color: var(--danger); font-size: var(--font-size-sm); }
+
+.set-recovered {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.set-recovered b { font-size: var(--font-size-sm); color: var(--warn); }
+.set-recovered span { flex: 1; font-size: var(--font-size-xs); color: var(--muted); }
