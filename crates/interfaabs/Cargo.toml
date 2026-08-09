@@ -1,11 +1,11 @@
 [package]
-name = "crashpilot-interface"
+name = "interfaabs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "crashpilot-interface"
+name = "interfaabs"
 path = "src/main.rs"
 
 [dependencies]

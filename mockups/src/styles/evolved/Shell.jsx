@@ -38,7 +38,7 @@ export default function Evolved() {
       <header className="ev-toolbar">
         <div className="ev-brand">
           <span className="ev-dot" />
-          CrashPilot
+          interfaabs
         </div>
 
         <button className="ev-chip ev-chip--session">

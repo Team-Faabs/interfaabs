@@ -71,7 +71,7 @@ export default function Chooser() {
       <header>
         <h1>Live Operations — UI checkpoint</h1>
         <p>
-          Phase 2 of the CrashPilot + simhark interface rebuild. One fixture-driven mock,
+          Phase 2 of the interfaabs + simhark interface rebuild. One fixture-driven mock,
           built six times so the direction can be chosen by comparison. Fixtures, field
           geometry and the field renderer are shared; everything else is independent per
           style. Disposable — this establishes no architecture.

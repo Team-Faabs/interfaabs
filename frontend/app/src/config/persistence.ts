@@ -10,8 +10,8 @@ import {
 } from './defaults'
 import type { AppConfig, WorkspaceConfig } from './types'
 
-const STORAGE_KEY = 'faabs.interface.config'
-const QUARANTINE_KEY = 'faabs.interface.config.corrupt'
+const STORAGE_KEY = 'interfaabs.config'
+const QUARANTINE_KEY = 'interfaabs.config.corrupt'
 
 export interface LoadResult {
   config: AppConfig
@@ -163,14 +163,14 @@ export function clearStoredConfig(): void {
 // ── import / export ──────────────────────────────────────────────────────
 
 export interface WorkspaceBundle {
-  faabsWorkspaceBundle: 1
+  interfaabsWorkspaceBundle: 1
   exportedAt: string
   workspaces: WorkspaceConfig[]
 }
 
 export function exportWorkspaces(workspaces: WorkspaceConfig[]): string {
   const bundle: WorkspaceBundle = {
-    faabsWorkspaceBundle: 1,
+    interfaabsWorkspaceBundle: 1,
     exportedAt: new Date().toISOString(),
     workspaces,
   }
@@ -179,8 +179,8 @@ export function exportWorkspaces(workspaces: WorkspaceConfig[]): string {
 
 export function importWorkspaces(text: string): WorkspaceConfig[] {
   const parsed = JSON.parse(text) as Partial<WorkspaceBundle>
-  if (parsed.faabsWorkspaceBundle !== 1 || !Array.isArray(parsed.workspaces)) {
-    throw new Error('not a FAABS workspace bundle')
+  if (parsed.interfaabsWorkspaceBundle !== 1 || !Array.isArray(parsed.workspaces)) {
+    throw new Error('not an interfaabs workspace bundle')
   }
   const usable = parsed.workspaces.filter(
     (workspace) =>

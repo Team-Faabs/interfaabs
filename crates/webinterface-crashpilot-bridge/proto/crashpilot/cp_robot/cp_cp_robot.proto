@@ -1,11 +1,11 @@
 syntax = "proto2";
 
-option go_package = "github.com/technulgy-lgnu/crashpilot-interface";
+option go_package = "github.com/technulgy-lgnu/interfaabs";
 
 import "crashpilot/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// The message from the crash pilot to the robot
+// The message from CrashPilot to the robot
 message CP_Robot {
   // Some fields to check stuff, drop all packets that are really late (for now 400ms) and the packet id should also be newer than the last one
   required uint32 robot_id = 1;
@@ -75,7 +75,7 @@ enum CP_Task {
   // Receive the ball from the CP_Command::kick_orient direction
   TASK_REC_KICK = 4;
   // Try to steal the ball from another robot.
-  // This is to steal the ball from the ball capturing zone, the CrashPilot will try to position robots accordingly to intercept balls
+  // This is to steal the ball from the ball capturing zone; CrashPilot will try to position robots accordingly to intercept balls
   TASK_STEAL = 5;
   // Dribble the ball to the CP_Command::pos position
   TASK_DRIBBLE = 6;

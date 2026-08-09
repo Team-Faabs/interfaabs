@@ -1,13 +1,13 @@
 # CrashPilot Protocol
 
-The CrashPilot will send a unicast message to each robot with
+CrashPilot will send a unicast message to each robot with
 the task the robot should perform.
 
 Path planning should be done on the robot and implementation for
 each task.
 
 
-The packets from the robot to the CrashPilot are not that important,
+The packets from the robot to CrashPilot are not that important,
 but I would like for all of us to try to implement them.
 
 ## Robot IPs
@@ -16,7 +16,7 @@ subnet (only important for production, you can choose different
 ips for testing):
 
 ```bash
-# Team Faabs
+# Team FAABS
 10.0.64.101 - 10.0.64.120
 
 # Team LNX
@@ -36,4 +36,4 @@ ips for testing):
 For personal computers, there is a DHCP Server for 54 clients, and
 we provide 6 additional LAN Ports for each team.
 
-You can configure the ips the CrashPilot uses in the C`P_IPs.toml` file (WIP).
+You can configure the IPs CrashPilot uses in the `CP_IPs.toml` file (WIP).

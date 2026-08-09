@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
       tracing::error!(%error, "CrashPilot bridge stopped");
     }
   });
-  println!("FAABS interface listening at {}", handle.http_url());
+  println!("interfaabs listening at {}", handle.http_url());
   tokio::signal::ctrl_c().await?;
   Ok(())
 }

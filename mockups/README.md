@@ -1,6 +1,6 @@
 # Live Operations — UI checkpoint mockups
 
-**This is disposable.** It is the Phase 2 UI checkpoint from the CrashPilot +
+**This is disposable.** It is the Phase 2 UI checkpoint from the interfaabs +
 simhark interface rebuild plan, and it establishes no application
 architecture. Delete the whole directory once a direction is chosen.
 

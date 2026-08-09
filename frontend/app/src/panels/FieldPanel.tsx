@@ -30,8 +30,8 @@ export function FieldPanel({ instance }: { instance: PanelInstance }) {
   // know how many exist.
   useEffect(() => {
     const refit = () => setFitToken((token) => token + 1)
-    window.addEventListener('faabs:fit-field', refit)
-    return () => window.removeEventListener('faabs:fit-field', refit)
+    window.addEventListener('interfaabs:fit-field', refit)
+    return () => window.removeEventListener('interfaabs:fit-field', refit)
   }, [])
 
   const worldIds = useMemo(() => {

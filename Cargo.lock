@@ -145,21 +145,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crashpilot-interface"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "webinterface-assets",
- "webinterface-core",
- "webinterface-crashpilot-bridge",
- "webinterface-protocol",
- "webinterface-recording",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,6 +542,21 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "interfaabs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "webinterface-assets",
+ "webinterface-core",
+ "webinterface-crashpilot-bridge",
+ "webinterface-protocol",
+ "webinterface-recording",
 ]
 
 [[package]]

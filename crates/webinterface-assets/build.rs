@@ -42,7 +42,7 @@ fn main() -> io::Result<()> {
     let status = Command::new("pnpm")
       .args([
         "--filter",
-        "@faabs/interface-app",
+        "@faabs/interfaabs",
         "exec",
         "vite",
         "build",

@@ -66,7 +66,7 @@ export function Shell() {
         simhark({ type: session?.lifecycle === 'running' ? 'pause' : 'start' }),
       'step-back': () => simhark({ type: 'step', data: { frames: -1 } }),
       'step-forward': () => simhark({ type: 'step', data: { frames: 1 } }),
-      'fit-field': () => window.dispatchEvent(new CustomEvent('faabs:fit-field')),
+      'fit-field': () => window.dispatchEvent(new CustomEvent('interfaabs:fit-field')),
       'mirror-x': () => updateField({ mirrorX: !config.field.mirrorX }),
       'mirror-y': () => updateField({ mirrorY: !config.field.mirrorY }),
       'toggle-debug-layers': () =>

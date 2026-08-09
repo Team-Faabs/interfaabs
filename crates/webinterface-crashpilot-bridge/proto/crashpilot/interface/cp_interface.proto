@@ -5,7 +5,7 @@ import "state/ssl_gc_referee_message.proto";
 import "vision_tracked/messages_robocup_ssl_wrapper.proto";
 import "vision_tracked/messages_robocup_ssl_wrapper_tracked.proto";
 
-option go_package = "github.com/technulgy-lgnu/crashpilot-interface";
+option go_package = "github.com/technulgy-lgnu/interfaabs";
 
 // buf:lint:ignore MESSAGE_PASCAL_CASE
 message CP_InterfaceWrapper {

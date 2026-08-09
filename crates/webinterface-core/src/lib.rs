@@ -66,7 +66,7 @@ impl AssetSource for BlankAssetSource {
     Some(Asset {
       content_type: "text/html; charset=utf-8".into(),
       bytes: Arc::from(
-        b"<!doctype html><html><head><meta charset=\"UTF-8\"><title>FAABS Interface</title></head><body><div id=\"root\"></div></body></html>"
+        b"<!doctype html><html><head><meta charset=\"UTF-8\"><title>interfaabs</title></head><body><div id=\"root\"></div></body></html>"
           .as_slice(),
       ),
       immutable: false,
@@ -310,11 +310,11 @@ impl InterfaceHost {
     let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
     let server_inner = Arc::clone(&inner);
     let thread = thread::Builder::new()
-      .name("faabs-interface-host".into())
+      .name("interfaabs-host".into())
       .spawn(move || {
         let runtime = match tokio::runtime::Builder::new_multi_thread()
           .enable_all()
-          .thread_name("faabs-interface-worker")
+          .thread_name("interfaabs-worker")
           .build()
         {
           Ok(runtime) => runtime,

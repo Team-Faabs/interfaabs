@@ -1,8 +1,8 @@
-# FAABS shared operator-interface backend
+# interfaabs
 
 This branch replaces the legacy interface backend with a Rust host shared by
-CrashPilot and simhark, plus the React operator interface that runs on it. The
-disposable Phase 2 mockups remain in `mockups/`.
+CrashPilot and simhark, plus the interfaabs React operator interface that runs
+on it. The disposable Phase 2 mockups remain in `mockups/`.
 
 ## Backend crates
 
@@ -15,7 +15,7 @@ disposable Phase 2 mockups remain in `mockups/`.
 - `webinterface-assets`: isolated pnpm/Vite build and Rust asset embedding.
 - `webinterface-crashpilot-bridge`: legacy CrashPilot protobuf compatibility
   adapter and reconnecting controller client.
-- `crashpilot-interface`: standalone Rust composition root.
+- `interfaabs`: standalone Rust composition root.
 
 ## Frontend
 
@@ -76,7 +76,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 cargo test --workspace
 cargo run -p xtask -- parity-scan
-cargo run -p crashpilot-interface
+cargo run -p interfaabs
 ```
 
 The standalone host binds to `0.0.0.0:8080` by default. Override it with

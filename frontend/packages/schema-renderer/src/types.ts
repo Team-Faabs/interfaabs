@@ -214,7 +214,7 @@ export interface SchemaRendererProps {
   schemaRevision?: string | number;
   robots?: RobotOption[];
   disabled?: boolean;
-  theme?: "simhark" | "crashpilot";
+  theme?: "simhark" | "interfaabs";
   density?: "comfortable" | "compact";
   className?: string;
   classNames?: Partial<SchemaRendererClassNames>;

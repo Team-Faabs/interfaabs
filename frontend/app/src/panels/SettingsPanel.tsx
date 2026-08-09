@@ -338,7 +338,7 @@ function Workspaces() {
         <Button
           onClick={() =>
             downloadJson(
-              `faabs-workspaces-${new Date().toISOString().slice(0, 10)}.json`,
+              `interfaabs-workspaces-${new Date().toISOString().slice(0, 10)}.json`,
               exportWorkspaces(config.workspaces),
             )
           }

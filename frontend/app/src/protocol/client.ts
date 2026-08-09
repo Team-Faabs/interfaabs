@@ -41,7 +41,7 @@ export interface ClientEvents {
   connection: (state: ConnectionState) => void
 }
 
-const RELOAD_MARK_KEY = 'faabs.interface.reload-fingerprint'
+const RELOAD_MARK_KEY = 'interfaabs.reload-fingerprint'
 const PING_INTERVAL_MS = 5_000
 const MIN_BACKOFF_MS = 500
 const MAX_BACKOFF_MS = 10_000

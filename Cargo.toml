@@ -5,7 +5,7 @@ members = [
   "crates/webinterface-core",
   "crates/webinterface-assets",
   "crates/webinterface-crashpilot-bridge",
-  "crates/crashpilot-interface",
+  "crates/interfaabs",
   "xtask",
 ]
 resolver = "2"

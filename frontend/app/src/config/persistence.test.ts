@@ -4,8 +4,8 @@ import { beforeEach, describe, it } from 'vitest'
 import { defaultWorkspaces } from './defaults'
 import { exportWorkspaces, importWorkspaces, loadConfig, saveConfig } from './persistence'
 
-const STORAGE_KEY = 'faabs.interface.config'
-const QUARANTINE_KEY = 'faabs.interface.config.corrupt'
+const STORAGE_KEY = 'interfaabs.config'
+const QUARANTINE_KEY = 'interfaabs.config.corrupt'
 
 /** Minimal localStorage, so persistence can be tested outside a browser. */
 class MemoryStorage {
@@ -119,9 +119,9 @@ describe('workspace bundles', () => {
   })
 
   it('rejects a file that is not a workspace bundle', () => {
-    assert.throws(() => importWorkspaces('{"hello":1}'), /not a FAABS workspace bundle/)
+    assert.throws(() => importWorkspaces('{"hello":1}'), /not an interfaabs workspace bundle/)
     assert.throws(
-      () => importWorkspaces(JSON.stringify({ faabsWorkspaceBundle: 1, workspaces: [{}] })),
+      () => importWorkspaces(JSON.stringify({ interfaabsWorkspaceBundle: 1, workspaces: [{}] })),
       /no usable workspace/,
     )
   })

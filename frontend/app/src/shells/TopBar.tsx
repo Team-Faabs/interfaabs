@@ -116,7 +116,7 @@ function Brand() {
                 : 'idle'
         }
       />
-      <span>CrashPilot</span>
+      <span>interfaabs</span>
     </div>
   )
 }
