@@ -195,9 +195,9 @@ function FieldToolbar({ onFit }: { onFit: () => void }) {
 
       <span
         className="fp-hint"
-        title="Drag a robot or the ball to move it · Alt-drag a robot to rotate it · Right-click for actions · Double-click to fit"
+        title="Drag a robot or the ball to move it · Alt-drag a robot to rotate it · Q/E or ←/→ turn the selected robot in 5° steps, Shift 25°, Ctrl to the 45° points · Right-click for actions · Double-click to fit"
       >
-        drag · alt-drag rotates · right-click
+        drag · alt-drag or Q/E rotate · right-click
       </span>
 
       <span className="fp-readout ui-mono">

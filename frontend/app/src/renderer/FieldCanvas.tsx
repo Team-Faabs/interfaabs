@@ -10,6 +10,16 @@ import { systemIdOfKind } from '../util/systems'
 import { buildScene, pickablesOf, poseOf, type DragGhost } from './build'
 import { Canvas2DRenderer, type DrawStats } from './canvas2d'
 import { PickIndex } from './picking'
+import { RotationControl } from './RotationControl'
+import {
+  PendingOrientation,
+  RotationThrottle,
+  isRotatable,
+  rotateBy,
+  rotationDirection,
+  selectionKey,
+  sendRotation,
+} from './rotation'
 import type { Scene } from './scene'
 import {
   fitTo,
@@ -116,6 +126,9 @@ export function FieldCanvas({
    */
   const adjustedRef = useRef(false)
   const hoverRef = useRef<EntitySelection | null>(null)
+  /** Keyboard turning outruns the host, so it steps from what it last asked for. */
+  const pendingRotationRef = useRef(new PendingOrientation())
+  const rotationThrottleRef = useRef(new RotationThrottle())
   const [stats, setStats] = useState<DrawStats | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
@@ -151,6 +164,11 @@ export function FieldCanvas({
   }, [fitToken, requestFit])
 
   // ── canvas lifecycle ───────────────────────────────────────────────────
+
+  useEffect(() => {
+    const throttle = rotationThrottleRef.current
+    return () => throttle.dispose()
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -389,6 +407,9 @@ export function FieldCanvas({
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!interactive || event.button === 2) return
+      // The rotation keys are bound to this element, so touching the field is
+      // what arms them.
+      hostRef.current?.focus({ preventScroll: true })
       const [worldX, worldY] = toWorld(event)
       const tolerance = 12 / viewportRef.current.scale
       const hit = pickRef.current?.pick(worldX, worldY, tolerance) ?? null
@@ -525,38 +546,55 @@ export function FieldCanvas({
             `move ${initial(target.team)}${target.robotId} → ${position.x_mm}, ${position.y_mm}`,
           )
         }
-      } else if (
-        drag.kind === 'rotate' &&
-        target.kind === 'robot' &&
-        target.team !== undefined &&
-        target.robotId !== undefined
-      ) {
-        store.send(
-          panelId,
-          {
-            type: 'system',
-            data: {
-              system_id: simharkId,
-              command: {
-                type: 'simhark',
-                data: {
-                  type: 'rotate_robot',
-                  data: {
-                    world_id: worldId,
-                    team: target.team,
-                    id: target.robotId,
-                    orientation_rad: drag.orientation,
-                  },
-                },
-              },
-            },
-          },
-          `rotate ${initial(target.team)}${target.robotId} → ${((drag.orientation * 180) / Math.PI).toFixed(1)}°`,
-        )
+      } else if (drag.kind === 'rotate' && isRotatable(target)) {
+        pendingRotationRef.current.set(selectionKey(target), drag.orientation)
+        sendRotation(store, panelId, simharkId, target, drag.orientation)
       }
     },
     [panelId, simharkId, store],
   )
+
+  /**
+   * Q/E and ←/→ turn the robot being dragged, or the selected one when nothing
+   * is being dragged. Bound to the field rather than the window so that two
+   * docked field panels do not each send the same rotation, and so the arrow
+   * keys still step frames when the field is not the thing being used — the
+   * handler only swallows them once it has actually turned something.
+   */
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!interactive) return
+      const direction = rotationDirection(event.code)
+      if (direction === 0) return
+
+      const drag = dragRef.current
+      const target = drag?.target ?? store.getMeta().selection
+      if (!isRotatable(target) || !simharkId || !mutable()) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const key = selectionKey(target)
+      const from =
+        drag && drag.kind !== 'pan'
+          ? drag.orientation
+          : pendingRotationRef.current.base(key, poseOfSelection(target)?.orientation ?? 0)
+      const next = rotateBy(from, direction, event)
+
+      // Keep the ghost in step, so a robot held with the pointer turns under it
+      // instead of snapping when the drag ends.
+      if (drag && drag.kind !== 'pan') drag.orientation = next
+      pendingRotationRef.current.set(key, next)
+      rotationThrottleRef.current.run(() =>
+        sendRotation(store, panelId, simharkId, target, next),
+      )
+    },
+    [interactive, mutable, panelId, poseOfSelection, simharkId, store],
+  )
+
+  const onKeyUp = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (rotationDirection(event.code) !== 0) rotationThrottleRef.current.flush()
+  }, [])
 
   // Zoom is a native, non-passive listener: React registers wheel handlers
   // passively, so `preventDefault` from a synthetic handler is ignored and the
@@ -742,16 +780,20 @@ export function FieldCanvas({
     <div
       className={`fc ${interactive ? 'is-interactive' : ''}`}
       ref={hostRef}
+      tabIndex={interactive ? 0 : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onPointerLeave={onPointerLeave}
+      onKeyDown={interactive ? onKeyDown : undefined}
+      onKeyUp={interactive ? onKeyUp : undefined}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
       style={{ background: theme.field.boundary }}
     >
       <canvas ref={canvasRef} className="fc-canvas" />
+      {interactive && <RotationControl panelId={panelId} />}
       {showStats && stats && (
         <div className="fc-stats ui-mono">
           {stats.drawMs.toFixed(2)} ms · {stats.drawCalls} calls · {stats.batches} batches ·{' '}
