@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 pub const RELOAD_REQUIRED_CLOSE_CODE: u16 = 4409;
 
 pub type SystemId = String;
@@ -609,16 +609,32 @@ pub enum CrashPilotCommand {
   Reconnect,
 }
 
+/// The AI Lab lifecycle.
+///
+/// Selecting an entry and running it are deliberately separate: a registry
+/// entry is stateful once instantiated, so editing a parameter must not
+/// silently restart a run. `Load` prepares, `Start` instantiates exactly once,
+/// and the host refuses a second `Start` until the run is stopped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum DeveloperCommand {
-  Activate {
+  /// Select and validate an entry without instantiating or running it.
+  Load {
     target: String,
     kind: String,
     entry: String,
     config: Value,
     params: Value,
   },
+  /// Instantiate the loaded entry once and begin stepping it.
+  Start {
+    target: String,
+  },
+  /// End the current run. The entry stays loaded so it can be started again.
+  Stop {
+    target: String,
+  },
+  /// Forget the loaded entry and hand the target back to its match AI.
   Disable {
     target: String,
   },
@@ -630,6 +646,25 @@ pub enum DeveloperCommand {
     target: String,
     enabled: bool,
   },
+}
+
+/// Lifecycle of one AI Lab target, reported back through
+/// `SystemSnapshot::properties` under `developer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeveloperRunState {
+  /// Nothing is selected; the match AI drives.
+  Idle,
+  /// An entry is selected and validated but has never been instantiated.
+  Loaded,
+  /// The instance exists and is stepped once per simulation tick.
+  Running,
+  /// The instance ran to completion. It is not restarted automatically.
+  Finished,
+  /// The operator ended the run before it completed.
+  Stopped,
+  /// Instantiation or a step failed. The instance has been discarded.
+  Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -7,12 +7,11 @@ import type { EntitySelection } from '../store/store'
 import { useTheme } from '../theme/ThemeProvider'
 import { ContextMenu, type MenuItem } from '../ui/primitives'
 import { systemIdOfKind } from '../util/systems'
-import { buildScene, pickablesOf } from './build'
+import { buildScene, pickablesOf, poseOf, type DragGhost } from './build'
 import { Canvas2DRenderer, type DrawStats } from './canvas2d'
 import { PickIndex } from './picking'
 import type { Scene } from './scene'
 import {
-  fieldExtent,
   fitTo,
   initialViewport,
   panBy,
@@ -38,7 +37,29 @@ interface DragState {
   worldX: number
   worldY: number
   orientation: number
+  /** Pose of the dragged entity when the drag began. */
+  originX: number
+  originY: number
+  originOrientation: number
+  /**
+   * Entity centre minus the world point under the pointer at grab time. Adding
+   * it back keeps the robot where it was picked up rather than snapping its
+   * centre onto the cursor.
+   */
+  grabDx: number
+  grabDy: number
   moved: boolean
+}
+
+/** A drag that has not passed this many pixels is a click, not a movement. */
+const DRAG_SLOP_PX = 3
+/** Duration of the eased fit, in milliseconds. */
+const FIT_MS = 220
+
+interface FitTween {
+  from: Pick<Viewport, 'centerX' | 'centerY' | 'scale'>
+  to: Pick<Viewport, 'centerX' | 'centerY' | 'scale'>
+  start: number
 }
 
 export function FieldCanvas({
@@ -85,6 +106,16 @@ export function FieldCanvas({
   const lastFrameRef = useRef(new Map<number, number>())
   const pickRef = useRef<PickIndex | null>(null)
   const needsFitRef = useRef(true)
+  /** Fit with an eased transition rather than a jump. Explicit fits only. */
+  const animateFitRef = useRef(false)
+  const tweenRef = useRef<FitTween | null>(null)
+  /**
+   * Set once the operator pans or zooms. Until then the view belongs to the
+   * panel and is refitted whenever the panel changes size; afterwards it
+   * belongs to the operator and resizing only reveals more of the field.
+   */
+  const adjustedRef = useRef(false)
+  const hoverRef = useRef<EntitySelection | null>(null)
   const [stats, setStats] = useState<DrawStats | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
@@ -105,9 +136,19 @@ export function FieldCanvas({
     }
   }, [settings.mirrorX, settings.mirrorY])
 
-  useEffect(() => {
+  const requestFit = useCallback((animate: boolean) => {
     needsFitRef.current = true
-  }, [fitToken])
+    animateFitRef.current = animate
+    adjustedRef.current = false
+  }, [])
+
+  const lastFitTokenRef = useRef(fitToken)
+  useEffect(() => {
+    // The mount fit is the one the render loop already does, unanimated.
+    if (fitToken === lastFitTokenRef.current) return
+    lastFitTokenRef.current = fitToken
+    requestFit(true)
+  }, [fitToken, requestFit])
 
   // ── canvas lifecycle ───────────────────────────────────────────────────
 
@@ -121,12 +162,21 @@ export function FieldCanvas({
 
     const observer = new ResizeObserver(() => {
       const rect = host.getBoundingClientRect()
+      const previous = sizeRef.current
       sizeRef.current = {
         width: Math.max(1, rect.width),
         height: Math.max(1, rect.height),
         dpr: window.devicePixelRatio || 1,
       }
-      needsFitRef.current = needsFitRef.current || rect.width < 2
+      // Resizing the window resizes the field with it. Once the operator has
+      // panned or zoomed, that view is theirs and is left alone — a bigger
+      // panel then simply shows more of the field. Refits during a resize are
+      // never animated, so the field tracks the drag instead of chasing it.
+      if (!adjustedRef.current || previous.width < 2) {
+        needsFitRef.current = true
+        animateFitRef.current = false
+        tweenRef.current = null
+      }
     })
     observer.observe(host)
 
@@ -199,6 +249,20 @@ export function FieldCanvas({
       }
 
       const review = cursorId ? true : meta.cursor ? !meta.cursor.live : false
+      const drag = dragRef.current
+      const ghost: DragGhost | null =
+        drag && drag.target && drag.kind !== 'pan' && drag.moved
+          ? {
+              kind: drag.kind,
+              target: drag.target,
+              x: drag.worldX,
+              y: drag.worldY,
+              orientation: drag.orientation,
+              fromX: drag.originX,
+              fromY: drag.originY,
+              fromOrientation: drag.originOrientation,
+            }
+          : null
       const scenes: Scene[] = frames.map((entry, index) => {
         // A history canvas has no trail: the frames arrive out of order as the
         // operator scrubs, so joining them would draw a path that never happened.
@@ -216,6 +280,8 @@ export function FieldCanvas({
           selection: meta.selection,
           review,
           trail: cursorId ? [] : (trailsRef.current.get(entry.world.world_id) ?? []),
+          hover: hoverRef.current,
+          ghost,
         })
       })
 
@@ -223,7 +289,30 @@ export function FieldCanvas({
 
       if (needsFitRef.current && width > 2) {
         needsFitRef.current = false
-        viewportRef.current = { ...viewportRef.current, ...fitTo(scene.extent, width, height) }
+        const fitted = fitTo(scene.extent, width, height)
+        if (animateFitRef.current) {
+          animateFitRef.current = false
+          tweenRef.current = { from: { ...viewportRef.current }, to: fitted, start: now }
+        } else {
+          tweenRef.current = null
+          viewportRef.current = { ...viewportRef.current, ...fitted }
+          onViewportChange?.(viewportRef.current)
+        }
+      }
+
+      const tween = tweenRef.current
+      if (tween) {
+        const t = Math.min(1, (now - tween.start) / FIT_MS)
+        const eased = 1 - (1 - t) ** 3
+        viewportRef.current = {
+          ...viewportRef.current,
+          centerX: tween.from.centerX + (tween.to.centerX - tween.from.centerX) * eased,
+          centerY: tween.from.centerY + (tween.to.centerY - tween.from.centerY) * eased,
+          // Zoom is interpolated geometrically: halving then halving again is
+          // one steady movement, where a linear ramp would lurch at the end.
+          scale: tween.from.scale * (tween.to.scale / tween.from.scale) ** eased,
+        }
+        if (t >= 1) tweenRef.current = null
         onViewportChange?.(viewportRef.current)
       }
 
@@ -273,6 +362,30 @@ export function FieldCanvas({
     return session ? session.mutable : true
   }, [store])
 
+  /**
+   * What the pointer is over. Kept in a ref and read by the render loop, so
+   * moving the mouse across the field costs a pick, not a React render.
+   */
+  const updateHover = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      const [worldX, worldY] = toWorld(event)
+      const tolerance = 12 / viewportRef.current.scale
+      const hit = pickRef.current?.pick(worldX, worldY, tolerance) ?? null
+      hoverRef.current = hit?.selection ?? null
+      setCursor(hostRef.current, hit ? 'grab' : null)
+    },
+    [toWorld],
+  )
+
+  /** Pose the world currently reports for an entity, for drag origins. */
+  const poseOfSelection = useCallback(
+    (selection: EntitySelection) => {
+      const world = store.getWorld(selection.worldId)?.world
+      return world ? poseOf(world, selection) : null
+    },
+    [store],
+  )
+
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!interactive || event.button === 2) return
@@ -281,21 +394,33 @@ export function FieldCanvas({
       const hit = pickRef.current?.pick(worldX, worldY, tolerance) ?? null
 
       event.currentTarget.setPointerCapture(event.pointerId)
+      tweenRef.current = null
 
       if (hit && event.button === 0) {
         store.setSelection(hit.selection)
         const canMutate = mutable() && simharkId !== null
+        const pose = poseOfSelection(hit.selection) ?? {
+          x: hit.x,
+          y: hit.y,
+          orientation: 0,
+        }
         dragRef.current = {
           kind: canMutate ? (event.altKey ? 'rotate' : 'move') : 'pan',
           pointerId: event.pointerId,
           startX: event.clientX,
           startY: event.clientY,
           target: hit.selection,
-          worldX,
-          worldY,
-          orientation: 0,
+          worldX: pose.x,
+          worldY: pose.y,
+          orientation: pose.orientation,
+          originX: pose.x,
+          originY: pose.y,
+          originOrientation: pose.orientation,
+          grabDx: pose.x - worldX,
+          grabDy: pose.y - worldY,
           moved: false,
         }
+        setCursor(hostRef.current, canMutate ? 'grabbing' : 'panning')
         return
       }
 
@@ -308,21 +433,33 @@ export function FieldCanvas({
         worldX,
         worldY,
         orientation: 0,
+        originX: worldX,
+        originY: worldY,
+        originOrientation: 0,
+        grabDx: 0,
+        grabDy: 0,
         moved: false,
       }
+      setCursor(hostRef.current, 'panning')
     },
-    [interactive, mutable, simharkId, store, toWorld],
+    [interactive, mutable, poseOfSelection, simharkId, store, toWorld],
   )
 
   const onPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current
-      if (!drag || drag.pointerId !== event.pointerId) return
+      if (!drag || drag.pointerId !== event.pointerId) {
+        if (interactive) updateHover(event)
+        return
+      }
       const dx = event.clientX - drag.startX
       const dy = event.clientY - drag.startY
-      if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true
+      if (Math.hypot(dx, dy) > DRAG_SLOP_PX) drag.moved = true
 
       if (drag.kind === 'pan') {
+        // Panning is the operator taking the view over, so it stops being
+        // refitted from under them on the next resize.
+        if (drag.moved) adjustedRef.current = true
         viewportRef.current = panBy(viewportRef.current, dx, dy)
         drag.startX = event.clientX
         drag.startY = event.clientY
@@ -332,13 +469,16 @@ export function FieldCanvas({
 
       const [worldX, worldY] = toWorld(event)
       if (drag.kind === 'move') {
-        drag.worldX = worldX
-        drag.worldY = worldY
+        // The grab offset keeps the robot under the point it was picked up by.
+        drag.worldX = worldX + drag.grabDx
+        drag.worldY = worldY + drag.grabDy
       } else {
-        drag.orientation = Math.atan2(worldY - drag.worldY, worldX - drag.worldX)
+        // Rotation is measured from the robot's centre, not from wherever the
+        // pointer happened to go down, so the body tracks the cursor exactly.
+        drag.orientation = Math.atan2(worldY - drag.originY, worldX - drag.originX)
       }
     },
-    [onViewportChange, toWorld],
+    [interactive, onViewportChange, toWorld, updateHover],
   )
 
   const onPointerUp = useCallback(
@@ -347,6 +487,7 @@ export function FieldCanvas({
       dragRef.current = null
       if (!drag || drag.pointerId !== event.pointerId) return
       event.currentTarget.releasePointerCapture(event.pointerId)
+      setCursor(hostRef.current, hoverRef.current ? 'grab' : null)
       if (!drag.moved || !drag.target || !simharkId) return
 
       const target = drag.target
@@ -417,20 +558,35 @@ export function FieldCanvas({
     [panelId, simharkId, store],
   )
 
-  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+  // Zoom is a native, non-passive listener: React registers wheel handlers
+  // passively, so `preventDefault` from a synthetic handler is ignored and the
+  // gesture scrolls the shell behind the field instead of zooming it.
+  useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const rect = host.getBoundingClientRect()
-    const factor = Math.exp(-event.deltaY * 0.0015)
-    viewportRef.current = zoomAt(
-      viewportRef.current,
-      rect.width,
-      rect.height,
-      event.clientX - rect.left,
-      event.clientY - rect.top,
-      factor,
-    )
-  }, [])
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const rect = host.getBoundingClientRect()
+      // `deltaY` arrives in pixels, lines or pages depending on the device, and
+      // a trackpad flick can deliver hundreds at once. Normalising and clamping
+      // keeps one notch worth roughly one step everywhere.
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1
+      const delta = Math.max(-240, Math.min(240, event.deltaY * unit))
+      tweenRef.current = null
+      adjustedRef.current = true
+      viewportRef.current = zoomAt(
+        viewportRef.current,
+        rect.width,
+        rect.height,
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        Math.exp(-delta * 0.0022),
+      )
+      onViewportChange?.(viewportRef.current)
+    }
+    host.addEventListener('wheel', onWheel, { passive: false })
+    return () => host.removeEventListener('wheel', onWheel)
+  }, [onViewportChange])
 
   const onContextMenu = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -566,18 +722,20 @@ export function FieldCanvas({
       items.push({
         id: 'fit',
         label: 'Fit view',
-        onSelect: () => {
-          needsFitRef.current = true
-        },
+        onSelect: () => requestFit(true),
       })
 
       setMenu({ x: event.clientX, y: event.clientY, items })
     },
-    [interactive, mutable, panelId, simharkId, store, toWorld],
+    [interactive, mutable, panelId, requestFit, simharkId, store, toWorld],
   )
 
-  const onDoubleClick = useCallback(() => {
-    needsFitRef.current = true
+  const onDoubleClick = useCallback(() => requestFit(true), [requestFit])
+
+  const onPointerLeave = useCallback(() => {
+    if (dragRef.current) return
+    hoverRef.current = null
+    setCursor(hostRef.current, null)
   }, [])
 
   return (
@@ -588,7 +746,7 @@ export function FieldCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onWheel={onWheel}
+      onPointerLeave={onPointerLeave}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
       style={{ background: theme.field.boundary }}
@@ -609,6 +767,19 @@ export function FieldCanvas({
 
 function initial(team: TeamColor): string {
   return team === 'blue' ? 'B' : 'Y'
+}
+
+/**
+ * Cursor shape as a data attribute rather than React state: the pointer crosses
+ * entity boundaries constantly, and none of that should re-render the panel.
+ */
+function setCursor(
+  host: HTMLDivElement | null,
+  cursor: 'grab' | 'grabbing' | 'panning' | null,
+): void {
+  if (!host) return
+  if (cursor) host.dataset.cursor = cursor
+  else delete host.dataset.cursor
 }
 
 /**

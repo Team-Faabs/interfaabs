@@ -1,12 +1,13 @@
 import type { PanelDescriptor } from '../docking/Dock'
 import type { PanelInstance } from '../docking/model'
 import type { MetaState } from '../store/store'
-import { DeveloperPanel } from './DeveloperPanel'
+import { AiLabPanel } from './AiLabPanel'
 import { FieldPanel, HistoryFieldPanel } from './FieldPanel'
 import { ReferrisPanel } from './ReferrisPanel'
 import { WorldsPanel } from './WorldsPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { StartCenterPanel } from './StartCenterPanel'
+import { TestsPanel } from './TestsPanel'
 import { AlertsList, CommandFeedPanel, EventsPanel, TimelinePanel } from './feeds'
 import { DebugValuesPanel, PropertiesPanel, RefereePanel, TasksPanel } from './inspect'
 import {
@@ -88,10 +89,17 @@ export const PANEL_REGISTRY: Record<string, PanelDescriptor> = {
   ),
   developer: simple(
     'developer',
-    'Developer',
+    'AI Lab',
     '⚗',
-    () => <DeveloperPanel />,
-    'AI switching, stalled-ball recovery and schema activation',
+    () => <AiLabPanel />,
+    'Browse the skill and play registry, then load and run one entry',
+  ),
+  tests: simple(
+    'tests',
+    'Tests',
+    '✓',
+    () => <TestsPanel />,
+    'Test suite status, filtering and failed-world focus',
   ),
   referris: simple(
     'referris',

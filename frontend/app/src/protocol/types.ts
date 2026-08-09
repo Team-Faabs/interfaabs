@@ -5,7 +5,7 @@
 // use serde's adjacent tagging: `{ type, data }`, with `data` absent for unit
 // variants.
 
-export const PROTOCOL_VERSION = 4
+export const PROTOCOL_VERSION = 5
 export const RELOAD_REQUIRED_CLOSE_CODE = 4409
 
 export type SystemId = string
@@ -465,9 +465,14 @@ export type CrashPilotCommand =
   | { type: 'stop_all' }
   | { type: 'reconnect' }
 
+/**
+ * The AI Lab lifecycle. Loading an entry and running it are separate steps:
+ * a registry entry keeps state once instantiated, so editing a parameter must
+ * never silently restart a run.
+ */
 export type DeveloperCommand =
   | {
-      type: 'activate'
+      type: 'load'
       data: {
         target: string
         kind: string
@@ -476,9 +481,47 @@ export type DeveloperCommand =
         params: unknown
       }
     }
+  | { type: 'start'; data: { target: string } }
+  | { type: 'stop'; data: { target: string } }
   | { type: 'disable'; data: { target: string } }
   | { type: 'switch_ai'; data: { target: string; ai: string } }
   | { type: 'set_ball_recovery'; data: { target: string; enabled: boolean } }
+
+export type DeveloperRunState =
+  | 'idle'
+  | 'loaded'
+  | 'running'
+  | 'finished'
+  | 'stopped'
+  | 'failed'
+
+/**
+ * One AI Lab target as published in `SystemSnapshot.properties.developer`.
+ * This travels as an opaque property rather than a protocol field: the shape
+ * belongs to whichever host owns the registry.
+ */
+export interface DeveloperRun {
+  target: string
+  kind: string | null
+  entry: string | null
+  state: DeveloperRunState
+  message: string
+  started_frame: number | null
+  finished_frame: number | null
+}
+
+export interface DeveloperResult {
+  target: string
+  entry: string | null
+  ok: boolean
+  message: string
+}
+
+export interface DeveloperSnapshot {
+  schema: unknown
+  results: Record<string, DeveloperResult>
+  runs: Record<string, DeveloperRun>
+}
 
 export type ReferrisCommand =
   | { type: 'start' }

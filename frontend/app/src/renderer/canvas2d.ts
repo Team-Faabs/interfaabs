@@ -293,6 +293,14 @@ interface Batch {
   opacity: number
 }
 
+/**
+ * A stroke width in millimetres that never falls below `minPx` on screen, so
+ * outlines stay crisp when zoomed out instead of fading into the fill.
+ */
+function strokeMm(pxPerMm: number, widthMm: number, minPx: number): number {
+  return Math.max(minPx / pxPerMm, widthMm)
+}
+
 function styleKey(
   stroke: string | undefined,
   fill: string | undefined,
@@ -320,7 +328,7 @@ function drawPrimitives(
     dashMm: number[] | undefined,
     opacity: number | undefined,
   ): Batch => {
-    const lineWidth = Math.max(MIN_STROKE_PX / pxPerMm, (widthMm ?? 16) / 1)
+    const lineWidth = strokeMm(pxPerMm, widthMm ?? 16, MIN_STROKE_PX)
     const dash = (dashMm ?? []).slice()
     const alpha = opacity ?? 1
     const key = styleKey(stroke, fill, lineWidth, dash, alpha)
@@ -462,21 +470,42 @@ function drawPrimitives(
       case 'robot': {
         // Robots are drawn individually: each has its own fill, and the flat
         // front means the path is orientation-dependent anyway.
+        const radius = primitive.radiusMm
+        const front = Math.min(primitive.frontMm, radius)
+        const ghost = primitive.ghost === true || primitive.fill === 'transparent'
         context.save()
         context.globalAlpha *= primitive.opacity ?? 1
         context.translate(primitive.x, primitive.y)
         context.rotate(primitive.orientation)
-        const path = robotPath(primitive.radiusMm, primitive.frontMm)
-        if (primitive.fill !== 'transparent') {
+        const path = robotPath(radius, front)
+
+        if (!ghost) {
           context.fillStyle = primitive.fill
           context.fill(path)
+          stats.drawCalls += 1
+
+          // The dribbler sits on the flat front. It is the cheapest cue for
+          // which way a robot faces, so it is drawn even when the body is only
+          // a few pixels across — hence the screen-space floor on its width.
+          const half = frontHalfWidth(radius, front) * 0.84
+          context.beginPath()
+          context.moveTo(front, -half)
+          context.lineTo(front, half)
+          context.strokeStyle = primitive.stroke
+          context.lineWidth = strokeMm(pxPerMm, radius * 0.2, 1.5)
+          context.lineCap = 'butt'
+          context.stroke()
+          stats.drawCalls += 1
         }
+
         context.strokeStyle = primitive.stroke
-        context.lineWidth = Math.max(MIN_STROKE_PX / pxPerMm, 10)
-        if (primitive.fill === 'transparent') context.setLineDash([70, 50])
+        context.lineWidth = strokeMm(pxPerMm, radius * (ghost ? 0.1 : 0.12), 1)
+        context.lineCap = 'butt'
+        context.lineJoin = 'round'
+        if (ghost) context.setLineDash([radius * 0.66, radius * 0.5])
         context.stroke(path)
         context.restore()
-        stats.drawCalls += 2
+        stats.drawCalls += 1
         break
       }
 
@@ -526,13 +555,25 @@ function drawPrimitives(
   void viewport
 }
 
-/** An SSL robot: a circle with the front flattened into a chord. */
+/** Half the width of the flat front chord, in millimetres. */
+function frontHalfWidth(radius: number, front: number): number {
+  return Math.sqrt(Math.max(0, radius * radius - Math.min(front, radius) ** 2))
+}
+
+/**
+ * An SSL robot: a circle with the front flattened into a chord.
+ *
+ * The arc has to run *around the back*, from one end of the chord to the other.
+ * Sweeping the short way instead leaves a sliver the width of the dribbler,
+ * which is what a robot looked like before this was fixed.
+ */
 function robotPath(radius: number, front: number): Path2D {
   const path = new Path2D()
-  const half = Math.sqrt(Math.max(0, radius * radius - front * front))
-  path.moveTo(front, -half)
-  path.arc(0, 0, radius, -Math.atan2(half, front) + Math.PI * 2, Math.atan2(half, front))
-  path.closePath()
+  const half = frontHalfWidth(radius, front)
+  const angle = Math.atan2(half, Math.min(front, radius))
+  path.moveTo(Math.min(front, radius), half)
+  path.arc(0, 0, radius, angle, -angle)
+  path.closePath() // the closing segment is the flat front
   return path
 }
 

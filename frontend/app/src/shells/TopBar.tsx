@@ -154,7 +154,12 @@ function Transport() {
   const simharkId = systemIdOfKind(meta, 'simhark')
   const mutable = canMutate(meta)
   const session = meta.sessions.find((entry) => entry.id === meta.activeSessionId)
-  const running = session?.lifecycle === 'running'
+  // The simulator's own pause flag, not the session lifecycle: a paused
+  // simhark keeps its session `running`, so reading the lifecycle here showed
+  // "playing" while the world stood still.
+  const published = store.getSnapshotProperties()['control.running']
+  const running =
+    typeof published === 'boolean' ? published : session?.lifecycle === 'running'
 
   const send = (command: 'start' | 'pause' | 'stop' | 'restart') => {
     if (!simharkId) return
@@ -209,17 +214,19 @@ function Speed() {
   const store = useStore()
   const meta = useMeta()
   const simharkId = systemIdOfKind(meta, 'simhark')
-  const [multiplier, setMultiplier] = useState(1)
+  // The host clamps and rounds what it was asked for, and another browser may
+  // have changed it, so the published speed wins over any local echo.
+  const published = store.getSnapshotProperties()['control.speed']
+  const multiplier = typeof published === 'number' && published > 0 ? published : 1
 
   return (
     <select
       className="tb-speed"
-      value={multiplier}
+      value={nearestSpeed(multiplier)}
       disabled={!simharkId || !canMutate(meta)}
-      title="Simulation speed"
+      title={`Simulation speed (host reports ${multiplier}×)`}
       onChange={(event) => {
         const next = Number(event.currentTarget.value)
-        setMultiplier(next)
         if (simharkId) {
           store.send('topbar', {
             type: 'system',
@@ -240,6 +247,17 @@ function Speed() {
         </option>
       ))}
     </select>
+  )
+}
+
+/**
+ * The preset closest to what the host reports. simhark stores speed as a
+ * percentage and clamps it, so a requested 8× comes back as 4× and the select
+ * has to show something that exists in its own option list.
+ */
+function nearestSpeed(multiplier: number): number {
+  return SPEEDS.reduce((best, speed) =>
+    Math.abs(speed - multiplier) < Math.abs(best - multiplier) ? speed : best,
   )
 }
 

@@ -21,6 +21,9 @@ fn main() -> io::Result<()> {
     app.join("tsconfig.json"),
     app.join("vite.config.ts"),
     app.join("src"),
+    // Workspace packages are compiled from source into the app bundle, so
+    // they are build inputs just like `frontend/app/src`.
+    root.join("frontend/packages"),
   ] {
     println!("cargo:rerun-if-changed={}", input.display());
   }

@@ -168,8 +168,15 @@ export function TimelinePanel() {
   useLiveTick()
 
   const session = meta.sessions.find((entry) => entry.id === meta.activeSessionId) ?? null
-  const liveFrame = session?.live_frame ?? world?.frame ?? 0
-  const cursorFrame = meta.cursor?.live === false ? (meta.cursor.frame ?? 0) : liveFrame
+  // A replaying simhark knows the whole recording's length up front, which is
+  // the only honest right-hand edge for the track. A live match only knows how
+  // far it has got.
+  const replay = readReplay(store.getSnapshotProperties())
+  const liveFrame = replay
+    ? Math.max(0, replay.frameCount - 1)
+    : (session?.live_frame ?? world?.frame ?? 0)
+  const cursorFrame =
+    meta.cursor?.live === false ? (meta.cursor.frame ?? 0) : (replay?.frameIndex ?? liveFrame)
   const simharkId = systemIdOfKind(meta, 'simhark')
   const mutable = canMutate(meta)
   const [bookmarkLabel, setBookmarkLabel] = useState('')
@@ -208,24 +215,41 @@ export function TimelinePanel() {
           }}
         >
           <div className="tl-fill" style={{ width: `${progress * 100}%` }} />
-          {meta.events.map((event) => {
-            // Events carry simulation time; the newest world's simulation time
-            // is the right edge of the track. Guard the first frames, when the
-            // span is still zero.
-            const at = spanNs > 0 ? Math.max(0, Math.min(1, event.at_ns / spanNs)) : 0
-            return (
-              <i
-                key={event.id}
-                className={`tl-ev tl-ev--${event.severity}`}
-                style={{ left: `${at * 100}%` }}
-                title={event.label}
-              />
-            )
-          })}
+          {replay
+            ? // A replay's own timeline is frame-indexed and complete, so its
+              // markers are placed exactly rather than by simulation time.
+              replay.events.map((event, index) => (
+                <i
+                  key={`${event.frame}-${index}`}
+                  className={`tl-ev tl-ev--${replayEventSeverity(event.kind)}`}
+                  style={{ left: `${(liveFrame > 0 ? event.frame / liveFrame : 0) * 100}%` }}
+                  title={`f${event.frame} · ${event.label}${
+                    event.details ? ` — ${event.details}` : ''
+                  }`}
+                />
+              ))
+            : meta.events.map((event) => {
+                // Events carry simulation time; the newest world's simulation
+                // time is the right edge of the track. Guard the first frames,
+                // when the span is still zero.
+                const at = spanNs > 0 ? Math.max(0, Math.min(1, event.at_ns / spanNs)) : 0
+                return (
+                  <i
+                    key={event.id}
+                    className={`tl-ev tl-ev--${event.severity}`}
+                    style={{ left: `${at * 100}%` }}
+                    title={event.label}
+                  />
+                )
+              })}
           <div className="tl-head" style={{ left: `${progress * 100}%` }} />
         </div>
         <span className="ui-mono tl-time">
-          {world ? formatNs(world.simulation_time_ns) : '—'}
+          {replay
+            ? `${cursorFrame.toLocaleString()} / ${replay.frameCount.toLocaleString()}`
+            : world
+              ? formatNs(world.simulation_time_ns)
+              : '—'}
         </span>
       </div>
 
@@ -296,4 +320,44 @@ export function AlertsList() {
       ))}
     </div>
   )
+}
+
+/** simhark's replay status, as published under the `replay.*` properties. */
+interface ReplayStatus {
+  frameIndex: number
+  frameCount: number
+  baseSpeed: number
+  events: Array<{ frame: number; kind: string; label: string; details: string | null }>
+}
+
+function readReplay(properties: Record<string, unknown>): ReplayStatus | null {
+  if (properties['replay.enabled'] !== true) return null
+  const frameCount = asNumber(properties['replay.frame_count'])
+  if (frameCount <= 0) return null
+  return {
+    frameIndex: asNumber(properties['replay.frame_index']),
+    frameCount,
+    baseSpeed: asNumber(properties['replay.base_speed']) || 1,
+    events: Array.isArray(properties['replay.events'])
+      ? (properties['replay.events'] as ReplayStatus['events']).filter(
+          (event) => typeof event?.frame === 'number',
+        )
+      : [],
+  }
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** Maps a replay event kind onto the marker tones the track already uses. */
+function replayEventSeverity(kind: string): 'info' | 'warn' | 'error' {
+  switch (kind) {
+    case 'foul':
+      return 'error'
+    case 'referee':
+      return 'warn'
+    default:
+      return 'info'
+  }
 }

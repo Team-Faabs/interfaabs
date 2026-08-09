@@ -13,7 +13,7 @@ import { DEFAULT_FIELD_GEOMETRY } from '../protocol/types'
 import type { DebugItem, DebugLayer, WorldState } from '../protocol/types'
 import type { EntitySelection } from '../store/store'
 import { THEMES } from '../theme/themes'
-import { buildScene, pickablesOf } from './build'
+import { buildScene, normalizeAngle, pickablesOf, poseOf, type DragGhost } from './build'
 import type { Primitive, Scene } from './scene'
 
 const PALETTE = THEMES.evolved.field
@@ -122,6 +122,8 @@ function build(
     selection?: EntitySelection | null
     review?: boolean
     world?: WorldState
+    hover?: EntitySelection | null
+    ghost?: DragGhost | null
   } = {},
 ): Scene {
   return buildScene({
@@ -133,7 +135,25 @@ function build(
     selection: overrides.selection ?? null,
     review: overrides.review ?? false,
     trail: [],
+    hover: overrides.hover ?? null,
+    ghost: overrides.ghost ?? null,
   })
+}
+
+const BLUE_3: EntitySelection = { kind: 'robot', worldId: 0, team: 'blue', robotId: 3 }
+
+function ghost(overrides: Partial<DragGhost> = {}): DragGhost {
+  return {
+    kind: 'move',
+    target: BLUE_3,
+    x: 2000,
+    y: 1000,
+    orientation: 0.9,
+    fromX: -520,
+    fromY: 340,
+    fromOrientation: 0.9,
+    ...overrides,
+  }
 }
 
 function layer(scene: Scene, id: string) {
@@ -337,6 +357,72 @@ describe('debug overlays', () => {
   it('applies a debug item with no world to the world being built', () => {
     const scene = build({ debugItems: [debugItem({ world_id: null })] })
     assert.equal(kinds(scene, 'debug-shapes').length, 1)
+  })
+})
+
+describe('interaction layer', () => {
+  it('costs nothing when nothing is hovered or dragged', () => {
+    assert.equal(layer(build(), 'interaction'), undefined)
+  })
+
+  it('rings the hovered entity, but not one that is already selected', () => {
+    const hovered = layer(build({ hover: BLUE_3 }), 'interaction')?.primitives ?? []
+    assert.equal(hovered.filter((p) => p.k === 'circle').length, 1)
+
+    const selected = build({ hover: BLUE_3, selection: BLUE_3 })
+    assert.equal(layer(selected, 'interaction'), undefined, 'the selection ring already says so')
+  })
+
+  it('draws the dragged robot at the proposed pose, above the tracked one', () => {
+    const scene = build({ ghost: ghost() })
+    const interaction = layer(scene, 'interaction')
+    const drawn = (interaction?.primitives ?? []).filter((p) => p.k === 'robot')
+
+    assert.equal(drawn.length, 1)
+    assert.equal(drawn[0].x, 2000)
+    assert.equal(drawn[0].y, 1000)
+    assert.equal(drawn[0].ghost, true, 'a proposed pose must not read as a tracked robot')
+    assert.ok((interaction?.z ?? 0) > (layer(scene, 'robots')?.z ?? 0))
+  })
+
+  it('leaves the tracked robot alone while its ghost is dragged', () => {
+    const tracked = (layer(build({ ghost: ghost() }), 'robots')?.primitives ?? []).filter(
+      (p): p is Extract<Primitive, { k: 'robot' }> => p.k === 'robot' && p.x === -520,
+    )
+    assert.equal(tracked.length, 1, 'the world still reports the robot where it is')
+    assert.equal(tracked[0].ghost, undefined)
+  })
+
+  it('ignores a ghost belonging to another world', () => {
+    const elsewhere = ghost({ target: { ...BLUE_3, worldId: 7 } })
+    assert.equal(layer(build({ ghost: elsewhere }), 'interaction'), undefined)
+  })
+
+  it('keeps the ghost at the robot while rotating, and sweeps the short way', () => {
+    const scene = build({
+      ghost: ghost({ kind: 'rotate', x: -520, y: 340, orientation: 0.9 - 3 }),
+    })
+    const primitives = layer(scene, 'interaction')?.primitives ?? []
+    const drawn = primitives.find((p) => p.k === 'robot')
+    const arc = primitives.find((p) => p.k === 'arc')
+
+    assert.ok(drawn && drawn.k === 'robot')
+    assert.equal(drawn.x, -520, 'rotating must not move the robot')
+    assert.equal(drawn.orientation, 0.9 - 3)
+    assert.ok(arc && arc.k === 'arc')
+    assert.ok(arc.end - arc.start <= Math.PI, 'a 3 rad turn is never drawn as 3.28 the other way')
+  })
+
+  it('normalises an angle delta to the short way round', () => {
+    assert.equal(normalizeAngle(0), 0)
+    assert.ok(Math.abs(normalizeAngle(Math.PI * 2 - 0.1) + 0.1) < 1e-9)
+    assert.ok(Math.abs(normalizeAngle(-Math.PI * 3) + Math.PI) < 1e-9)
+  })
+
+  it('reads a pose back out of the world, and reports a departed robot as gone', () => {
+    assert.deepEqual(poseOf(world(), BLUE_3), { x: -520, y: 340, orientation: 0.9 })
+    assert.equal(poseOf(world(), { ...BLUE_3, robotId: 11 }), null)
+    assert.equal(poseOf(world({ ball: null }), { kind: 'ball', worldId: 0 }), null)
   })
 })
 

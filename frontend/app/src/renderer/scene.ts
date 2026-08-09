@@ -80,6 +80,12 @@ export type Primitive =
       label?: string
       labelColor?: string
       opacity?: number
+      /**
+       * A pose that is proposed or predicted rather than observed — a drag
+       * ghost or an AI hologram. Drawn as a dashed outline so it can never be
+       * mistaken for a tracked robot. `fill: 'transparent'` implies it.
+       */
+      ghost?: boolean
     }
   | {
       k: 'heatmap'

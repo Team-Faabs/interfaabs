@@ -18,8 +18,29 @@ import { fieldExtent } from './viewport'
 /** Seconds of velocity drawn as the vector's length. */
 const VELOCITY_LOOKAHEAD_S = 0.35
 /** The real ball is 21.5 mm across, which is a sub-pixel dot at match zoom. */
-const MIN_BALL_DRAW_RADIUS_MM = 32
+const MIN_BALL_DRAW_RADIUS_MM = 42
 const LOW_CONFIDENCE = 0.92
+/** Front chord as a fraction of the body radius, from the SSL rules envelope. */
+const FRONT_RATIO = 75 / 90
+
+/**
+ * A pose the operator is proposing with the pointer. It is not world state and
+ * never will be: it exists between pointer-down and the command the drag emits,
+ * so the field answers the drag immediately instead of waiting for the host to
+ * echo the move back.
+ */
+export interface DragGhost {
+  kind: 'move' | 'rotate'
+  target: EntitySelection
+  /** The proposed pose. */
+  x: number
+  y: number
+  orientation: number
+  /** The pose the world still reports, which the ghost was dragged away from. */
+  fromX: number
+  fromY: number
+  fromOrientation: number
+}
 
 export interface BuildInput {
   world: WorldState
@@ -31,6 +52,10 @@ export interface BuildInput {
   /** Desaturated, non-interactive presentation for detached viewer cursors. */
   review: boolean
   trail: Array<[number, number]>
+  /** Entity under the pointer, ringed so the drag target is never a surprise. */
+  hover?: EntitySelection | null
+  /** Live drag preview. Only ever set for the world that owns the target. */
+  ghost?: DragGhost | null
 }
 
 export function buildScene(input: BuildInput): Scene {
@@ -42,6 +67,7 @@ export function buildScene(input: BuildInput): Scene {
     ...buildDebugLayers(input),
     buildBallLayer(input).build(),
     buildRobotLayer(input).build(),
+    ...buildInteractionLayer(input),
   ]
   if (settings.showCoordinateHints) layers.push(buildHintLayer(geometry, palette).build())
 
@@ -396,8 +422,9 @@ function appendDebugPrimitive(
         y: primitive.data.at.y_mm,
         orientation: primitive.data.orientation_rad,
         radiusMm: 90,
-        frontMm: 75,
+        frontMm: 90 * FRONT_RATIO,
         fill: 'transparent',
+        ghost: true,
         stroke: primitive.data.team === 'blue' ? palette.blue : palette.yellow,
         opacity: style.opacity * 0.65,
         label: primitive.data.robot_id !== null ? String(primitive.data.robot_id) : undefined,
@@ -506,6 +533,11 @@ function buildBallLayer(input: BuildInput): LayerBuilder {
     })
   }
 
+  // A soft halo under the dot. The ball is the smallest thing on the field and
+  // the one the eye looks for first, so it gets a little help. Sized as a
+  // multiple of the dot rather than a fixed margin, so it stays a glow when
+  // zoomed in instead of growing into a smudge.
+  builder.add({ k: 'circle', x, y, rMm: radius * 1.75, fill: palette.ball, opacity: 0.2 })
   builder.add({ k: 'circle', x, y, rMm: radius, fill: palette.ball })
   return builder
 }
@@ -516,7 +548,7 @@ function buildRobotLayer(input: BuildInput): LayerBuilder {
   const { world, palette, settings, selection, review } = input
   const builder = new LayerBuilder('robots', 50)
   const radius = world.field.max_robot_radius_mm
-  const front = radius * (75 / 90)
+  const front = radius * FRONT_RATIO
 
   for (const robot of world.robots) {
     const dim = !robot.visible || review
@@ -639,6 +671,199 @@ function appendVelocity(
   })
 }
 
+// ── interaction ──────────────────────────────────────────────────────────
+
+/**
+ * Hover and drag feedback, in its own layer above the robots. Neither the world
+ * layers nor the picking geometry has to know a pointer exists, and an idle
+ * field pays nothing: with no hover and no drag the layer is dropped entirely.
+ */
+function buildInteractionLayer(input: BuildInput): SceneLayer[] {
+  const { world, palette, ghost, hover, selection } = input
+  const builder = new LayerBuilder('interaction', 56)
+
+  if (hover && hover.worldId === world.world_id && !sameEntity(hover, selection)) {
+    const at = poseOf(world, hover)
+    if (at) {
+      builder.add({
+        k: 'circle',
+        x: at.x,
+        y: at.y,
+        rMm: entityRadius(world, hover) + 55,
+        stroke: palette.select,
+        widthMm: 14,
+        opacity: 0.34,
+      })
+    }
+  }
+
+  if (ghost && ghost.target.worldId === world.world_id) appendGhost(builder, input, ghost)
+
+  const layer = builder.build()
+  return layer.primitives.length > 0 ? [layer] : []
+}
+
+function appendGhost(builder: LayerBuilder, input: BuildInput, ghost: DragGhost): void {
+  const { world, palette } = input
+  const radius = world.field.max_robot_radius_mm
+  const tint =
+    ghost.target.kind === 'ball'
+      ? palette.ball
+      : ghost.target.team === 'blue'
+        ? palette.blue
+        : palette.yellow
+
+  if (ghost.kind === 'rotate') {
+    const delta = normalizeAngle(ghost.orientation - ghost.fromOrientation)
+    const ring = radius + 110
+    // The arc is always drawn as the short way round, so a small correction
+    // never flashes up as a 350° sweep.
+    builder.add({
+      k: 'arc',
+      x: ghost.fromX,
+      y: ghost.fromY,
+      rMm: ring,
+      start: ghost.fromOrientation + Math.min(0, delta),
+      end: ghost.fromOrientation + Math.max(0, delta),
+      sector: false,
+      stroke: palette.select,
+      widthMm: 16,
+      opacity: 0.5,
+    })
+    builder.add({
+      k: 'arrow',
+      x1: ghost.fromX,
+      y1: ghost.fromY,
+      x2: ghost.fromX + Math.cos(ghost.orientation) * (ring + 90),
+      y2: ghost.fromY + Math.sin(ghost.orientation) * (ring + 90),
+      headMm: 90,
+      stroke: tint,
+      widthMm: 14,
+      opacity: 0.85,
+    })
+    builder.add(ghostRobot(ghost.fromX, ghost.fromY, ghost.orientation, radius, tint, ghost))
+    builder.add({
+      k: 'text',
+      x: ghost.fromX,
+      y: ghost.fromY + ring + 130,
+      text: `${((delta * 180) / Math.PI).toFixed(0)}°`,
+      color: palette.fieldText,
+      sizePx: 11,
+      align: 'center',
+      baseline: 'bottom',
+      mono: true,
+    })
+    return
+  }
+
+  const reach = Math.hypot(ghost.x - ghost.fromX, ghost.y - ghost.fromY)
+  if (reach > radius * 0.4) {
+    builder.add({
+      k: 'polyline',
+      points: [ghost.fromX, ghost.fromY, ghost.x, ghost.y],
+      closed: false,
+      stroke: palette.select,
+      widthMm: 12,
+      dashMm: [90, 70],
+      opacity: 0.45,
+    })
+  }
+
+  if (ghost.target.kind === 'ball') {
+    const ballRadius = Math.max(world.field.ball_radius_mm, MIN_BALL_DRAW_RADIUS_MM)
+    builder.add({ k: 'circle', x: ghost.x, y: ghost.y, rMm: ballRadius, fill: tint, opacity: 0.4 })
+    builder.add({
+      k: 'circle',
+      x: ghost.x,
+      y: ghost.y,
+      rMm: ballRadius + 50,
+      stroke: tint,
+      widthMm: 14,
+      dashMm: [55, 45],
+      opacity: 0.9,
+    })
+  } else {
+    builder.add(ghostRobot(ghost.x, ghost.y, ghost.orientation, radius, tint, ghost))
+  }
+
+  builder.add({
+    k: 'text',
+    x: ghost.x,
+    y: ghost.y + entityRadius(world, ghost.target) + 70,
+    text: `${(ghost.x / 1000).toFixed(2)}, ${(ghost.y / 1000).toFixed(2)} m`,
+    color: palette.fieldText,
+    sizePx: 10.5,
+    align: 'center',
+    baseline: 'bottom',
+    mono: true,
+  })
+}
+
+function ghostRobot(
+  x: number,
+  y: number,
+  orientation: number,
+  radius: number,
+  tint: string,
+  ghost: DragGhost,
+): Primitive {
+  return {
+    k: 'robot',
+    x,
+    y,
+    orientation,
+    radiusMm: radius,
+    frontMm: radius * FRONT_RATIO,
+    fill: 'transparent',
+    ghost: true,
+    stroke: tint,
+    opacity: 0.95,
+    label: ghost.target.robotId !== undefined ? String(ghost.target.robotId) : undefined,
+    labelColor: tint,
+  }
+}
+
+/** Pose of a selected entity in the world it belongs to, if it is still there. */
+export function poseOf(
+  world: WorldState,
+  selection: EntitySelection,
+): { x: number; y: number; orientation: number } | null {
+  if (selection.kind === 'ball') {
+    if (!world.ball) return null
+    return { x: world.ball.position.x_mm, y: world.ball.position.y_mm, orientation: 0 }
+  }
+  const robot = world.robots.find(
+    (entry) => entry.team === selection.team && entry.id === selection.robotId,
+  )
+  if (!robot) return null
+  return {
+    x: robot.position.x_mm,
+    y: robot.position.y_mm,
+    orientation: robot.orientation_rad,
+  }
+}
+
+function entityRadius(world: WorldState, selection: EntitySelection): number {
+  return selection.kind === 'ball'
+    ? Math.max(world.field.ball_radius_mm, MIN_BALL_DRAW_RADIUS_MM)
+    : world.field.max_robot_radius_mm
+}
+
+function sameEntity(a: EntitySelection | null, b: EntitySelection | null): boolean {
+  if (!a || !b) return false
+  return (
+    a.kind === b.kind &&
+    a.worldId === b.worldId &&
+    a.team === b.team &&
+    a.robotId === b.robotId
+  )
+}
+
+/** To `[-π, π)`, so an angle delta is always the short way round. */
+export function normalizeAngle(angle: number): number {
+  return angle - Math.PI * 2 * Math.floor((angle + Math.PI) / (Math.PI * 2))
+}
+
 // ── hints ────────────────────────────────────────────────────────────────
 
 function buildHintLayer(geometry: FieldGeometry, palette: FieldPalette): LayerBuilder {
@@ -657,7 +882,8 @@ function buildHintLayer(geometry: FieldGeometry, palette: FieldPalette): LayerBu
   })
   builder.add({
     k: 'text',
-    x: 140,
+    // Clear of the halfway line it would otherwise sit on top of.
+    x: 320,
     y: halfWidth - 160,
     text: '+Y',
     color: palette.fieldText,

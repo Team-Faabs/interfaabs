@@ -28,8 +28,9 @@ import {
 import { PopoutWindow } from './Popout'
 import './dock.css'
 
-/** Width of the icon rail itself; the panel body sits beside it. */
-export const RAIL_SIZE = 46
+/** Width of the icon rail itself; the panel body sits beside it. Mirrored by
+ *  `.dock-strip--rail` in dock.css. */
+export const RAIL_SIZE = 62
 const SPLITTER_SIZE = 6
 const DRAG_THRESHOLD_PX = 4
 

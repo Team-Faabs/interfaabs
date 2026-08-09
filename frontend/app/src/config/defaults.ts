@@ -68,6 +68,7 @@ function liveOpsLayout(): DockNode {
           panel('sessions'),
           panel('layers'),
           panel('developer'),
+          panel('tests'),
           panel('recordings'),
         ],
         { rail: 'left', activeTabId: null, railWidth: 260 },

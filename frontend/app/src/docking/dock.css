@@ -180,10 +180,12 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 
 /* ── vertical icon rail ──────────────────────────────────────────────── */
 
+/* Keep the width in step with RAIL_SIZE in Dock.tsx: it is wide enough for
+   `Properties` and `Diagnostics` to read as words rather than as `Proper…`. */
 .dock-strip--rail {
   flex-direction: column;
   min-height: 0;
-  width: 46px;
+  width: 62px;
   padding: 6px 4px;
   gap: 4px;
   background: var(--bg);
@@ -197,7 +199,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   justify-content: center;
   gap: 3px;
   height: 50px;
-  padding: 0 2px;
+  padding: 0 1px;
   border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--dim);
@@ -210,14 +212,21 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   box-shadow: none;
 }
 .dock-tab-icon { font-size: 15px; line-height: 1; }
+/* Two-word titles wrap instead of being cut mid-word; anything longer than two
+   lines still falls back to the tab's own tooltip. */
 .dock-strip--rail .dock-tab em {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  overflow: hidden;
   font-style: normal;
   font-size: 8.5px;
   letter-spacing: 0.02em;
-  max-width: 38px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ── drag feedback ───────────────────────────────────────────────────── */

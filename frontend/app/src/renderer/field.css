@@ -8,6 +8,9 @@
   user-select: none;
 }
 .fc.is-interactive { cursor: crosshair; }
+.fc.is-interactive[data-cursor='grab'] { cursor: grab; }
+.fc.is-interactive[data-cursor='grabbing'] { cursor: grabbing; }
+.fc.is-interactive[data-cursor='panning'] { cursor: move; }
 
 .fc-canvas {
   display: block;
