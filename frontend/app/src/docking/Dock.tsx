@@ -3,11 +3,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   addTab,
@@ -33,6 +35,11 @@ import './dock.css'
 export const RAIL_SIZE = 62
 const SPLITTER_SIZE = 6
 const DRAG_THRESHOLD_PX = 4
+/** Add-panel menu: gap from its button, keep-out from the window edge, and the
+ *  height it is allowed to grow to before it scrolls. */
+const MENU_GAP = 4
+const MENU_EDGE = 8
+const MENU_MAX_HEIGHT = 320
 
 export interface PanelDescriptor {
   id: string
@@ -482,28 +489,79 @@ function TabStrip({
 /** Reopens closed panels. Without it, closing a panel is a one-way door. */
 function AddPanelButton({ tabsetId }: { tabsetId: string }) {
   const { registry, root, change } = useDock()
-  const [open, setOpen] = useState(false)
+  const anchor = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null)
   const present = new Set(allTabs(root).map((tab) => tab.panel))
+  const open = placement !== null
+
+  // The tab strip and every dock cell clip their overflow, so a menu laid out
+  // inside the strip is cut off instead of drawn over the panel below it. It is
+  // positioned against the viewport and portalled out of the dock entirely —
+  // into `ownerDocument`, because the tabset may be inside a pop-out window.
+  const place = useCallback(() => {
+    const button = anchor.current
+    if (!button) return
+    setPlacement(placeMenu(button))
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const view = anchor.current?.ownerDocument.defaultView
+    if (!view) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setPlacement(null)
+      anchor.current?.focus()
+    }
+    // Dismissed from a listener rather than a full-window scrim: a scrim would
+    // swallow the pointerdown that reopens the menu from its own button, and
+    // would sit between the operator and the Halt controls.
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menu.current?.contains(target) || anchor.current?.contains(target)) return
+      setPlacement(null)
+    }
+    // Scrolling a panel under the menu, or resizing the window, would otherwise
+    // leave it stranded away from its button.
+    view.addEventListener('resize', place)
+    view.addEventListener('scroll', place, true)
+    view.addEventListener('keydown', escape)
+    view.addEventListener('pointerdown', dismiss, true)
+    return () => {
+      view.removeEventListener('resize', place)
+      view.removeEventListener('scroll', place, true)
+      view.removeEventListener('keydown', escape)
+      view.removeEventListener('pointerdown', dismiss, true)
+    }
+  }, [open, place])
+
+  const container = anchor.current?.ownerDocument.body ?? null
 
   return (
-    <span className="dock-add">
+    <>
       <button
+        ref={anchor}
         className="dock-strip-btn"
         title="Add a panel to this tabset"
-        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => (open ? setPlacement(null) : place())}
       >
         ＋
       </button>
-      {open && (
-        <>
-          <span className="dock-add-scrim" onClick={() => setOpen(false)} />
-          <span className="dock-add-menu">
+      {placement &&
+        container &&
+        createPortal(
+          <div ref={menu} className="dock-add-menu" role="menu" style={placement.style}>
             {Object.values(registry).map((descriptor) => (
               <button
                 key={descriptor.id}
+                role="menuitem"
                 title={descriptor.description}
                 onClick={() => {
-                  setOpen(false)
+                  setPlacement(null)
                   change(addTab(root, tabsetId, makePanel(descriptor.id)))
                 }}
               >
@@ -512,11 +570,42 @@ function AddPanelButton({ tabsetId }: { tabsetId: string }) {
                 {present.has(descriptor.id) && <em>open</em>}
               </button>
             ))}
-          </span>
-        </>
-      )}
-    </span>
+          </div>,
+          container,
+        )}
+    </>
   )
+}
+
+interface MenuPlacement {
+  style: React.CSSProperties
+}
+
+/** Anchors the menu under its button, flipping above it when the button sits
+ *  near the bottom of the window — as it does for a bottom dock. */
+function placeMenu(button: HTMLElement): MenuPlacement {
+  const view = button.ownerDocument.defaultView ?? window
+  const rect = button.getBoundingClientRect()
+  const below = view.innerHeight - rect.bottom - MENU_GAP - MENU_EDGE
+  const above = rect.top - MENU_GAP - MENU_EDGE
+  // Right-aligned with the button, since the button sits at the strip's right
+  // edge; `right` rather than `left` so the width need not be measured.
+  const right = Math.max(MENU_EDGE, view.innerWidth - rect.right)
+  const flip = below < Math.min(MENU_MAX_HEIGHT, above)
+
+  return {
+    style: flip
+      ? {
+          right,
+          bottom: view.innerHeight - rect.top + MENU_GAP,
+          maxHeight: Math.min(MENU_MAX_HEIGHT, above),
+        }
+      : {
+          right,
+          top: rect.bottom + MENU_GAP,
+          maxHeight: Math.min(MENU_MAX_HEIGHT, below),
+        },
+  }
 }
 
 // ── drop targeting ───────────────────────────────────────────────────────

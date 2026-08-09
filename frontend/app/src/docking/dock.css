@@ -94,17 +94,17 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 }
 .dock-strip-btn:hover { background: var(--surface-3); color: var(--text); }
 
-.dock-add { position: relative; display: inline-flex; }
-.dock-add-scrim { position: fixed; inset: 0; z-index: 40; }
+/* Portalled to the document body and positioned against the viewport by
+   `placeMenu` in Dock.tsx: the tab strip and the dock cells clip overflow, so a
+   menu laid out inside the strip is cut off. Above the drag ghost (80), below
+   the command palette (90). */
 .dock-add-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 41;
+  position: fixed;
+  z-index: 85;
   display: flex;
   flex-direction: column;
   min-width: 190px;
-  max-height: 320px;
+  max-width: calc(100vw - 16px);
   overflow: auto;
   padding: 4px;
   border: 1px solid var(--line);
@@ -114,6 +114,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 }
 .dock-add-menu button {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 9px;
   height: var(--row-h);
