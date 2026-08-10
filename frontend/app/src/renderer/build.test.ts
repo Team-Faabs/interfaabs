@@ -16,7 +16,7 @@ import { THEMES } from '../theme/themes'
 import { buildScene, normalizeAngle, pickablesOf, poseOf, type DragGhost } from './build'
 import type { Primitive, Scene } from './scene'
 
-const PALETTE = THEMES.evolved.field
+const PALETTE = THEMES.evolved.dark.field
 
 function world(overrides: Partial<WorldState> = {}): WorldState {
   return {

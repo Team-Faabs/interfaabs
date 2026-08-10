@@ -21,8 +21,12 @@
 .ui-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .ui-btn--sm { height: calc(var(--control-h) - 4px); padding: 0 8px; font-size: var(--font-size-xs); }
 .ui-btn--lg { height: calc(var(--control-h) + 6px); padding: 0 18px; font-weight: 650; }
-.ui-btn--accent { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.ui-btn--accent:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.ui-btn--primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); font-weight: 600; }
+/* Not `brightness()`: on a light scheme that washes the fill towards the page
+   and the label stops being readable. --primary-hover moves away from the
+   surface whichever scheme is on. */
+.ui-btn--primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.ui-btn--primary:active:not(:disabled) { background: var(--primary-active); border-color: var(--primary-active); }
 .ui-btn--danger { background: var(--danger); border-color: var(--danger); color: var(--danger-ink); font-weight: 700; }
 .ui-btn--danger:hover:not(:disabled) { filter: brightness(1.08); background: var(--danger); }
 .ui-btn--warn { background: var(--warn); border-color: var(--warn); color: var(--warn-ink); font-weight: 700; }
@@ -44,7 +48,7 @@
 }
 .ui-iconbtn:hover { background: var(--surface-2); color: var(--text); }
 .ui-iconbtn:focus-visible { outline: none; box-shadow: var(--focus); }
-.ui-iconbtn.on { background: var(--accent); color: var(--accent-ink); }
+.ui-iconbtn.on { background: var(--primary); color: var(--primary-ink); }
 
 .ui-seg {
   display: inline-flex;
@@ -66,7 +70,7 @@
 }
 .ui-seg button + button { border-left: 1px solid var(--line-soft); }
 .ui-seg button:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-.ui-seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.ui-seg button.on { background: var(--primary); color: var(--primary-ink); font-weight: 600; }
 .ui-seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 .ui-seg--sm button { height: calc(var(--control-h) - 5px); padding: 0 8px; font-size: var(--font-size-xs); }
 
@@ -100,10 +104,10 @@
   background: var(--muted);
   transition: transform 120ms ease, background 120ms ease;
 }
-.ui-toggle input:checked + .ui-toggle-track { background: var(--accent); border-color: var(--accent); }
+.ui-toggle input:checked + .ui-toggle-track { background: var(--primary); border-color: var(--primary); }
 .ui-toggle input:checked + .ui-toggle-track .ui-toggle-knob {
   transform: translateX(13px);
-  background: var(--accent-ink);
+  background: var(--primary-ink);
 }
 .ui-toggle input:focus-visible + .ui-toggle-track { box-shadow: var(--focus); }
 .ui-toggle-label { flex: 1; min-width: 0; color: var(--text); }
@@ -131,7 +135,7 @@
   font-size: var(--font-size-sm);
 }
 .ui-input:focus,
-.ui-select:focus { outline: none; box-shadow: var(--focus); border-color: var(--accent); }
+.ui-select:focus { outline: none; box-shadow: var(--focus); border-color: var(--primary); }
 .ui-input::placeholder { color: var(--dim); }
 .ui-input[type='number'] { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
@@ -226,7 +230,7 @@
   text-align: left;
   cursor: pointer;
 }
-.ui-menu-item:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
+.ui-menu-item:hover:not(:disabled) { background: var(--primary); color: var(--primary-ink); }
 .ui-menu-item:disabled { color: var(--dim); cursor: not-allowed; }
 .ui-menu-item.is-danger { color: var(--danger); }
 .ui-menu-item.is-danger:hover:not(:disabled) { background: var(--danger); color: var(--danger-ink); }
@@ -257,11 +261,11 @@
   white-space: nowrap;
 }
 .ui-table tbody tr:hover td { background: var(--surface-2); }
-.ui-table tbody tr.is-selected td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.ui-table tbody tr.is-selected td { background: color-mix(in srgb, var(--primary) 18%, transparent); }
 .ui-table tbody tr.is-error td { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .ui-table .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .ui-table .dim { color: var(--dim); font-size: var(--font-size-xs); }
-.ui-table .tag { font-family: var(--font-mono); font-weight: 700; color: var(--accent-2); }
+.ui-table .tag { font-family: var(--font-mono); font-weight: 700; color: var(--accent-text); }
 .ui-table .ok { color: var(--ok); }
 .ui-table .bad { color: var(--danger); }
 .ui-table .warn { color: var(--warn); }

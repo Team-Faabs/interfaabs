@@ -2,6 +2,7 @@
 // and workspace import/export.
 
 import { isValidNode, normaliseLayout } from '../docking/model'
+import { parseColor, toHex } from '../theme/color'
 import {
   CONFIG_VERSION,
   DEFAULT_FIELD_SETTINGS,
@@ -120,6 +121,12 @@ function reconcile(value: Record<string, unknown>): AppConfig {
     version: CONFIG_VERSION,
     shell: stored.shell === 'brief' ? 'brief' : 'evolved',
     theme: isThemeId(stored.theme) ? stored.theme : base.theme,
+    colorScheme: isColorScheme(stored.colorScheme) ? stored.colorScheme : base.colorScheme,
+    // Normalised on the way in, so a colour hand-edited into storage either
+    // becomes a hex the theme builder understands or reverts to the theme's
+    // own — never a string that reaches the document and paints nothing.
+    primaryColor: sanitiseColor(stored.primaryColor),
+    accentColor: sanitiseColor(stored.accentColor),
     workspaces,
     activeWorkspaceId,
     field: { ...DEFAULT_FIELD_SETTINGS, ...(stored.field ?? {}) },
@@ -128,6 +135,16 @@ function reconcile(value: Record<string, unknown>): AppConfig {
     shortcuts: { ...DEFAULT_SHORTCUTS, ...(stored.shortcuts ?? {}) },
     presets: Array.isArray(stored.presets) ? stored.presets : [],
   }
+}
+
+function isColorScheme(value: unknown): value is AppConfig['colorScheme'] {
+  return value === 'system' || value === 'dark' || value === 'light'
+}
+
+function sanitiseColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const parsed = parseColor(value)
+  return parsed ? toHex(parsed) : null
 }
 
 function isThemeId(value: unknown): value is AppConfig['theme'] {

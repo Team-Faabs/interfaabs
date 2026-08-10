@@ -95,6 +95,48 @@ describe('loadConfig', () => {
     assert.equal(config.shortcuts['command-palette'], 'ctrl+k', 'new bindings take their default')
   })
 
+  it('defaults the colour scheme to the system preference', () => {
+    assert.equal(loadConfig().config.colorScheme, 'system')
+    assert.equal(loadConfig().config.primaryColor, null)
+    assert.equal(loadConfig().config.accentColor, null)
+  })
+
+  it('normalises stored colours and drops the ones it cannot read', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        colorScheme: 'light',
+        primaryColor: '#ABC',
+        accentColor: 'rgb(13, 148, 136)',
+      }),
+    )
+    const { config } = loadConfig()
+
+    assert.equal(config.colorScheme, 'light')
+    assert.equal(config.primaryColor, '#aabbcc', 'shorthand hex is expanded and lowercased')
+    assert.equal(config.accentColor, '#0d9488', 'rgb() is normalised to hex')
+  })
+
+  it('reverts an unusable colour or scheme to the theme default', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        colorScheme: 'sepia',
+        primaryColor: 'rebeccapurple',
+        accentColor: 42,
+      }),
+    )
+    const { config } = loadConfig()
+
+    // Null is a real state — follow the theme — not a broken one, so a colour
+    // that cannot be parsed lands somewhere the interface still works.
+    assert.equal(config.colorScheme, 'system')
+    assert.equal(config.primaryColor, null)
+    assert.equal(config.accentColor, null)
+  })
+
   it('falls back to a valid workspace when the stored active id is gone', () => {
     localStorage.setItem(
       STORAGE_KEY,

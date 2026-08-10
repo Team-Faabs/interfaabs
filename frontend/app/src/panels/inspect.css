@@ -19,7 +19,7 @@
   font-weight: 800;
   font-size: var(--font-size-sm);
 }
-.ins-chip--blue { background: var(--accent); color: var(--accent-ink); }
+.ins-chip--blue { background: var(--primary); color: var(--primary-ink); }
 .ins-chip--yellow { background: var(--warn); color: var(--warn-ink); }
 .ins-selection b { display: block; font-size: var(--font-size-sm); }
 .ins-selection i { font-style: normal; font-size: var(--font-size-xs); color: var(--muted); }
@@ -56,7 +56,7 @@
   color: var(--muted);
 }
 
-.ins-spark { display: block; color: var(--accent-2); opacity: 0.9; }
+.ins-spark { display: block; color: var(--accent-text); opacity: 0.9; }
 
 .ins-refgrid {
   display: grid;

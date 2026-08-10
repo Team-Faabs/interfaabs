@@ -13,6 +13,14 @@ export type ShellId = 'evolved' | 'brief'
  */
 export type ThemeId = 'evolved' | 'console' | 'studio' | 'brief' | 'ledger'
 
+/**
+ * Every theme is authored twice, so the scheme is a free axis: pick the look
+ * you want and the light level the hall demands, independently. `system`
+ * follows `prefers-color-scheme`, which is the default — a laptop that dims
+ * itself for an evening match should take the interface with it.
+ */
+export type ColorScheme = 'system' | 'dark' | 'light'
+
 export type WorkspaceKind = 'start' | 'live' | 'replay' | 'custom'
 
 export type TopBarItemId =
@@ -119,6 +127,15 @@ export interface AppConfig {
   version: number
   shell: ShellId
   theme: ThemeId
+  colorScheme: ColorScheme
+  /**
+   * The two colours the operator owns, as hex. `null` follows the theme's own
+   * suggestion for the active scheme. Both are adjusted for legibility before
+   * they reach the document, so an unreadable choice is impossible rather than
+   * merely discouraged.
+   */
+  primaryColor: string | null
+  accentColor: string | null
   shortcuts: ShortcutMap
   presets: SetupPreset[]
   /** Overrides the theme's own density when set. */

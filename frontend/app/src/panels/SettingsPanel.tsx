@@ -2,7 +2,7 @@
 // popover: appearance, the configurable top bar, workspaces and layouts, the
 // full field option set, and storage.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useConfig } from '../config/ConfigContext'
 import {
@@ -12,6 +12,7 @@ import {
   defaultWorkspaces,
 } from '../config/defaults'
 import type {
+  ColorScheme,
   ShellId,
   ShortcutAction,
   ThemeId,
@@ -26,9 +27,19 @@ import {
   importWorkspaces,
 } from '../config/persistence'
 import { nextId } from '../docking/model'
-import { THEME_LIST } from '../theme/themes'
+import { COLOR_PRESETS, THEMES, THEME_LIST } from '../theme/themes'
+import { useSystemScheme, useTheme } from '../theme/ThemeProvider'
+import { parseColor, toHex } from '../theme/color'
 import { useStore } from '../store/hooks'
-import { Button, Field, IconButton, Select, TextInput, Toggle } from '../ui/primitives'
+import {
+  Button,
+  Field,
+  IconButton,
+  Segmented,
+  Select,
+  TextInput,
+  Toggle,
+} from '../ui/primitives'
 import './settings.css'
 
 const SHELLS: Array<{ id: ShellId; label: string; description: string }> = [
@@ -97,6 +108,10 @@ export function SettingsPanel() {
 
 function Appearance() {
   const { config, update } = useConfig()
+  const theme = useTheme()
+  const systemScheme = useSystemScheme()
+  /** The active theme's own colours for the active scheme — the "default". */
+  const skin = THEMES[config.theme][theme.scheme]
 
   return (
     <>
@@ -118,33 +133,100 @@ function Appearance() {
         ))}
       </div>
 
+      <h2>Colour scheme</h2>
+      <p className="set-hint">
+        Every theme is authored twice, so the scheme is a free axis: keep the look you know and
+        take it light for a bright hall or dark for an evening match.
+      </p>
+      <div className="set-row">
+        <Segmented<ColorScheme>
+          value={config.colorScheme}
+          onChange={(colorScheme) => update({ colorScheme })}
+          options={[
+            {
+              value: 'system',
+              label: `System (${systemScheme})`,
+              title: 'Follow the operating system’s appearance setting',
+            },
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+        />
+      </div>
+
       <h2>Theme</h2>
       <p className="set-hint">
-        The theme carries colour, radius and density. Console and Studio are looks, not layouts:
-        either shell can wear either one.
+        The theme carries the neutrals, the radius and the chrome weight. Console and Studio are
+        looks, not layouts: either shell can wear either one. The swatches preview each theme in
+        the scheme that is currently active.
       </p>
       <div className="set-cards">
-        {THEME_LIST.map((theme) => (
-          <button
-            key={theme.id}
-            className={`set-card ${config.theme === theme.id ? 'is-active' : ''}`}
-            onClick={() => update({ theme: theme.id as ThemeId })}
-          >
-            <span className="set-swatches">
-              {[
-                theme.vars['--bg'],
-                theme.vars['--surface-2'],
-                theme.vars['--accent'],
-                theme.field.pitch,
-                theme.vars['--danger'],
-              ].map((colour, index) => (
-                <i key={index} style={{ background: colour }} />
-              ))}
-            </span>
-            <b>{theme.label}</b>
-            <span>{theme.description}</span>
-          </button>
-        ))}
+        {THEME_LIST.map((entry) => {
+          const skin = entry[theme.scheme]
+          return (
+            <button
+              key={entry.id}
+              className={`set-card ${config.theme === entry.id ? 'is-active' : ''}`}
+              onClick={() => update({ theme: entry.id as ThemeId })}
+            >
+              <span className="set-swatches">
+                {[
+                  skin.vars['--bg'],
+                  skin.vars['--surface-2'],
+                  // What this theme would actually wear: the operator's colour
+                  // if they have chosen one, the theme's own if they have not.
+                  config.primaryColor ?? skin.primary,
+                  config.accentColor ?? skin.accent,
+                  skin.field.pitch,
+                ].map((colour, index) => (
+                  <i key={index} style={{ background: colour }} />
+                ))}
+              </span>
+              <b>{entry.label}</b>
+              <span>{entry.description}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <h2>Colours</h2>
+      <p className="set-hint">
+        The primary carries actions and selection; the accent marks secondary values and the kick
+        overlay on the field. Both are darkened or lightened as far as legibility on this theme
+        requires, so no choice can leave a control unreadable. Team blue, team yellow and the ball
+        keep their real colours — they describe the world, not the interface.
+      </p>
+      <div className="set-colours">
+        <ColorControl
+          label="Primary"
+          value={config.primaryColor}
+          themeDefault={skin.primary}
+          chosen={theme.chosen.primary}
+          effective={theme.effective.primary}
+          onChange={(primaryColor) => update({ primaryColor })}
+        />
+        <ColorControl
+          label="Accent"
+          value={config.accentColor}
+          themeDefault={skin.accent}
+          chosen={theme.chosen.accent}
+          effective={theme.effective.accent}
+          onChange={(accentColor) => update({ accentColor })}
+        />
+      </div>
+      <div className="set-preview">
+        <span className="set-preview-chip set-preview-chip--primary">Primary</span>
+        <span className="set-preview-chip set-preview-chip--accent">Accent</span>
+        <span className="set-preview-chip set-preview-chip--soft">Selected row</span>
+        <span className="set-preview-link">Accent as text</span>
+      </div>
+      <div className="set-actions">
+        <Button
+          disabled={config.primaryColor === null && config.accentColor === null}
+          onClick={() => update({ primaryColor: null, accentColor: null })}
+        >
+          Use this theme’s colours
+        </Button>
       </div>
 
       <h2>Density</h2>
@@ -178,6 +260,109 @@ function Appearance() {
       </div>
     </>
   )
+}
+
+/**
+ * One colour: presets for the common choice, a native picker for the arbitrary
+ * one, and a hex field for the team colour someone already has written down.
+ * `null` means "whatever the theme suggests", which is a real state rather than
+ * a synonym for the default hex — it keeps following the theme as the operator
+ * tries others.
+ */
+function ColorControl({
+  label,
+  value,
+  themeDefault,
+  chosen,
+  effective,
+  onChange,
+}: {
+  label: string
+  value: string | null
+  themeDefault: string
+  /** What was asked for, normalised to hex. */
+  chosen: string
+  /** What is on screen after the legibility adjustment. */
+  effective: string
+  onChange: (value: string | null) => void
+}) {
+  const current = value ?? themeDefault
+  const [draft, setDraft] = useState(current)
+
+  // The hex field is free text while it is being typed, so it has to be pulled
+  // back into line when the colour changes from anywhere else — a preset, the
+  // native picker, a theme switch, or the reset button.
+  useEffect(() => setDraft(current), [current])
+
+  const commit = (text: string) => {
+    setDraft(text)
+    const parsed = parseColor(text)
+    if (parsed) onChange(toHex(parsed))
+  }
+
+  const adjusted = chosen.toLowerCase() !== effective.toLowerCase()
+
+  return (
+    <div className="set-colour">
+      <div className="set-colour-head">
+        <b>{label}</b>
+        <i>{value === null ? 'following the theme' : 'custom'}</i>
+      </div>
+
+      <div className="set-presets">
+        {COLOR_PRESETS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            className={`set-preset ${
+              current.toLowerCase() === preset.value.toLowerCase() ? 'is-active' : ''
+            }`}
+            style={{ background: preset.value }}
+            title={preset.label}
+            aria-label={`${label}: ${preset.label}`}
+            onClick={() => onChange(preset.value)}
+          />
+        ))}
+      </div>
+
+      <div className="set-colour-row">
+        <input
+          type="color"
+          className="set-swatch-input"
+          value={current}
+          aria-label={`${label} colour`}
+          onChange={(event) => onChange(event.currentTarget.value)}
+        />
+        <TextInput
+          value={draft}
+          spellCheck={false}
+          aria-label={`${label} hex value`}
+          placeholder={themeDefault}
+          onChange={(event) => commit(event.currentTarget.value)}
+          onBlur={() => setDraft(current)}
+        />
+        <Button size="sm" disabled={value === null} onClick={() => onChange(null)}>
+          Default
+        </Button>
+      </div>
+
+      {adjusted && (
+        <p className="set-note">
+          <b>Adjusted to {effective}</b> — {chosen} does not hold up against this theme’s
+          surfaces, so it was {isLightened(chosen, effective) ? 'lightened' : 'darkened'} until it
+          did. Pick a stronger shade to keep it exactly as chosen.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Which way `ensureContrast` moved a colour, for the explanation above. */
+function isLightened(from: string, to: string): boolean {
+  const a = parseColor(from)
+  const b = parseColor(to)
+  if (!a || !b) return false
+  return b.r + b.g + b.b > a.r + a.g + a.b
 }
 
 function TopBarEditor() {

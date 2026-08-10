@@ -51,7 +51,7 @@
   text-align: left;
   cursor: pointer;
 }
-.sc-item:hover { border-color: var(--accent); }
+.sc-item:hover { border-color: var(--primary); }
 .sc-item b { display: block; font-size: var(--font-size-sm); }
 .sc-item i { font-style: normal; font-size: var(--font-size-xs); color: var(--dim); }
 

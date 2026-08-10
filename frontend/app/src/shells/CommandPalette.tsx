@@ -81,6 +81,19 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         run: () => update({ theme: theme.id }),
       })
     }
+    for (const [scheme, label, hint] of [
+      ['light', 'Light', 'Force the light scheme'],
+      ['dark', 'Dark', 'Force the dark scheme'],
+      ['system', 'Follow the system', 'Track the operating system’s appearance setting'],
+    ] as const) {
+      list.push({
+        id: `scheme:${scheme}`,
+        label: `Colour scheme: ${label}`,
+        group: 'Appearance',
+        hint,
+        run: () => update({ colorScheme: scheme }),
+      })
+    }
 
     if (crashPilotId && mutable) {
       list.push({

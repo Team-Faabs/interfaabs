@@ -18,7 +18,7 @@
   border-radius: var(--radius-sm);
 }
 .wl-row:hover { background: var(--surface-2); }
-.wl-row.is-focused { border-color: var(--accent); }
+.wl-row.is-focused { border-color: var(--primary); }
 .wl-row .ui-toggle { flex: 1; min-width: 0; }
 .wl-meta { font-size: var(--font-size-xs); color: var(--dim); white-space: nowrap; }
 
@@ -35,4 +35,4 @@
   cursor: pointer;
 }
 .wl-focus:hover { color: var(--text); border-color: var(--muted); }
-.wl-focus.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.wl-focus.is-on { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }

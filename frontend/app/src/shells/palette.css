@@ -53,7 +53,7 @@
   text-align: left;
   cursor: pointer;
 }
-.pal-item.is-active { background: var(--accent); color: var(--accent-ink); }
+.pal-item.is-active { background: var(--primary); color: var(--primary-ink); }
 .pal-group {
   flex: none;
   width: 78px;

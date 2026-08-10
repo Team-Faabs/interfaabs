@@ -44,7 +44,7 @@
 
 .rf-event { display: flex; align-items: baseline; gap: 8px; font-size: var(--font-size-sm); }
 .rf-event span { flex: none; font-size: var(--font-size-xs); color: var(--dim); }
-.rf-event b { flex: none; color: var(--accent-2); font-weight: 600; }
+.rf-event b { flex: none; color: var(--accent-text); font-weight: 600; }
 .rf-event i {
   flex: 1;
   min-width: 0;

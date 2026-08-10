@@ -19,25 +19,75 @@
 }
 
 .fc.is-interactive:focus { outline: none; }
-.fc.is-interactive:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
+.fc.is-interactive:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--primary); }
 
-/* ── rotation control ─────────────────────────────────────────────────── */
+/* ── robot control ────────────────────────────────────────────────────── */
 
-.fc-rot {
+.fc-rc {
   position: absolute;
   right: 8px;
   bottom: 8px;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(300px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   user-select: text;
 }
 
-.fc-rot-dial {
+.fc-rc-head { display: flex; align-items: center; gap: 6px; }
+.fc-rc-grow { flex: 1; }
+
+.fc-rc-chip {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.fc-rc-chip--blue { background: var(--primary); color: var(--primary-ink); }
+.fc-rc-chip--yellow { background: var(--warn); color: var(--warn-ink); }
+
+.fc-rc-live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+}
+/* Telemetry, not switches: the robot protocol has no direct actuator command,
+   so these report what the kicker and dribbler are doing. */
+.fc-rc-led {
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  font-style: normal;
+}
+.fc-rc-led.is-on { border-color: var(--ok); background: var(--ok); color: var(--bg); }
+
+.fc-rc-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.fc-rc-icon:hover { color: var(--text); border-color: var(--primary); }
+
+.fc-rc-place { display: flex; align-items: flex-end; gap: 8px; }
+
+.fc-rc-dial {
   flex: none;
   display: block;
   line-height: 0;
@@ -45,42 +95,71 @@
   cursor: grab;
   touch-action: none;
 }
-.fc-rot.is-dragging .fc-rot-dial { cursor: grabbing; }
-.fc-rot-dial:focus { outline: none; }
-.fc-rot-dial:focus-visible { box-shadow: var(--focus); }
+.fc-rc.is-dragging .fc-rc-dial { cursor: grabbing; }
+.fc-rc-dial:focus { outline: none; }
+.fc-rc-dial:focus-visible { box-shadow: var(--focus); }
 
-.fc-rot-face {
+.fc-rc-face {
   fill: color-mix(in srgb, var(--bg) 70%, transparent);
   stroke: var(--line);
   stroke-width: 1;
 }
-.fc-rot-tick { stroke: var(--dim); stroke-width: 1; }
-.fc-rot-tick--major { stroke: var(--muted); }
-.fc-rot-needle { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
-.fc-rot-hub { fill: var(--accent); }
+.fc-rc-tick { stroke: var(--dim); stroke-width: 1; }
+.fc-rc-tick--major { stroke: var(--muted); }
+.fc-rc-needle { stroke: var(--primary); stroke-width: 2; stroke-linecap: round; }
+.fc-rc-hub { fill: var(--primary); }
 
-.fc-rot-body { display: flex; flex-direction: column; gap: 3px; }
+.fc-rc-boxes { display: flex; flex-wrap: wrap; gap: 4px; }
 
-.fc-rot-label {
+.fc-rc-box {
   display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 64px;
+}
+.fc-rc-box--wide { flex-basis: 100%; }
+.fc-rc-box > span { color: var(--muted); font-size: var(--font-size-xs); }
+.fc-rc-box .ui-input,
+.fc-rc-box .ui-select {
+  height: calc(var(--control-h) - 4px);
+  padding: 0 5px;
   font-size: var(--font-size-xs);
 }
-.fc-rot-chip {
-  padding: 0 5px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+
+.fc-rc-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: var(--font-size-xs);
 }
-.fc-rot-chip--blue { background: var(--accent); color: var(--accent-ink); }
-.fc-rot-chip--yellow { background: var(--warn); color: var(--warn-ink); }
+.fc-rc-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
 
-.fc-rot-entry { display: flex; align-items: center; gap: 4px; }
-.fc-rot-entry .ui-input { width: 76px; }
-.fc-rot-unit { color: var(--muted); font-size: var(--font-size-sm); }
+.fc-rc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; }
+/* The seed buttons sit on the input line, not on the label line. */
+.fc-rc-here { margin-bottom: 2px; }
 
-.fc-rot-hint { color: var(--dim); font-size: var(--font-size-xs); }
+.fc-rc-toggles {
+  display: flex;
+  gap: 10px;
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+}
+
+.fc-rc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-basis: 100%;
+}
+
+.fc-rc-hint { color: var(--dim); font-size: var(--font-size-xs); }
 
 .fc-stats {
   position: absolute;

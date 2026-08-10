@@ -53,7 +53,7 @@
 }
 
 .ts-filter.is-on {
-  border-color: var(--accent);
+  border-color: var(--primary);
   color: var(--text);
   background: var(--surface-2);
 }

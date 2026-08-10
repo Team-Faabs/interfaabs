@@ -25,6 +25,14 @@ import {
   TextInput,
   Toggle,
 } from '../ui/primitives'
+import {
+  DEFAULT_MANUAL_COMMAND,
+  STATE_OPTIONS,
+  TASK_OPTIONS,
+  seedManualCommand,
+  sendManualCommand,
+  unsignedOrNull,
+} from '../util/robotCommand'
 import { canMutate, systemIdOfKind } from '../util/systems'
 import {
   formatDegrees,
@@ -35,28 +43,6 @@ import {
   teamTag,
 } from '../util/format'
 import './inspect.css'
-
-export const STATE_OPTIONS = [
-  'STATE_HALT',
-  'STATE_STOP',
-  'STATE_FREE',
-  'STATE_GOALIE',
-  'STATE_SUBSTITUTE',
-]
-
-export const TASK_OPTIONS = [
-  'TASK_UNSPECIFIED',
-  'TASK_POS',
-  'TASK_KICK',
-  'TASK_CHIP',
-  'TASK_REC_KICK',
-  'TASK_STEAL',
-  'TASK_DRIBBLE',
-  'TASK_PosBall',
-  'TASK_BLOCK',
-  'STATE_KICKOFF',
-  'STATE_FREEKICK',
-]
 
 const DEFAULT_OPTIONS: CrashPilotOptions = {
   mode: 'manual',
@@ -92,20 +78,7 @@ export function PropertiesPanel() {
     )
   }, [world, meta.selection])
 
-  const [draft, setDraft] = useState<RobotManualCommand>({
-    robot_ids: [],
-    state: 'STATE_FREE',
-    task: 'TASK_POS',
-    position: null,
-    speed_mm_per_s: null,
-    raw: false,
-    in_wall: false,
-    ignore_robots: [],
-    orientation_millirad: null,
-    kick_orientation_millirad: null,
-    kick_speed: null,
-    enemy_id: null,
-  })
+  const [draft, setDraft] = useState<RobotManualCommand>(DEFAULT_MANUAL_COMMAND)
 
   // Retarget the draft when the selection changes, seeding position and
   // orientation from where the robot actually is — an empty form that the
@@ -114,20 +87,7 @@ export function PropertiesPanel() {
   useEffect(() => {
     if (!selected) return
     setDraft((current) =>
-      current.robot_ids[0] === selected.id
-        ? current
-        : {
-            ...current,
-            robot_ids: [selected.id],
-            position: {
-              x_mm: Math.round(selected.position.x_mm),
-              y_mm: Math.round(selected.position.y_mm),
-            },
-            orientation_millirad: Math.round(selected.orientation_rad * 1000),
-            state: selected.task && STATE_OPTIONS.includes(selected.task)
-              ? selected.task
-              : current.state,
-          },
+      current.robot_ids[0] === selected.id ? current : seedManualCommand(selected, current),
     )
   }, [selected])
 
@@ -142,23 +102,7 @@ export function PropertiesPanel() {
 
   const send = () => {
     if (!selected) return
-    store.send(
-      'properties',
-      {
-        type: 'system',
-        data: {
-          system_id: crashPilotId,
-          command: {
-            type: 'crash_pilot',
-            data: {
-              type: 'send_robot_command',
-              data: { ...draft, robot_ids: [selected.id] },
-            },
-          },
-        },
-      },
-      `${teamTag(selected.team, selected.id)} ${shortState(draft.state)} · ${shortState(draft.task)}`,
-    )
+    sendManualCommand(store, 'properties', crashPilotId, selected, draft)
   }
 
   return (
@@ -243,7 +187,7 @@ export function PropertiesPanel() {
                   onChange={(event) =>
                     setDraft({
                       ...draft,
-                      speed_mm_per_s: numberOrNull(event.currentTarget.value),
+                      speed_mm_per_s: unsignedOrNull(event.currentTarget.value),
                     })
                   }
                 />
@@ -256,7 +200,7 @@ export function PropertiesPanel() {
                   onChange={(event) =>
                     setDraft({
                       ...draft,
-                      orientation_millirad: numberOrNull(event.currentTarget.value),
+                      orientation_millirad: unsignedOrNull(event.currentTarget.value),
                     })
                   }
                 />
@@ -269,7 +213,7 @@ export function PropertiesPanel() {
                   onChange={(event) =>
                     setDraft({
                       ...draft,
-                      kick_orientation_millirad: numberOrNull(event.currentTarget.value),
+                      kick_orientation_millirad: unsignedOrNull(event.currentTarget.value),
                     })
                   }
                 />
@@ -280,7 +224,7 @@ export function PropertiesPanel() {
                   value={draft.kick_speed ?? ''}
                   placeholder="—"
                   onChange={(event) =>
-                    setDraft({ ...draft, kick_speed: numberOrNull(event.currentTarget.value) })
+                    setDraft({ ...draft, kick_speed: unsignedOrNull(event.currentTarget.value) })
                   }
                 />
               </Field>
@@ -290,7 +234,7 @@ export function PropertiesPanel() {
                   value={draft.enemy_id ?? ''}
                   placeholder="—"
                   onChange={(event) =>
-                    setDraft({ ...draft, enemy_id: numberOrNull(event.currentTarget.value) })
+                    setDraft({ ...draft, enemy_id: unsignedOrNull(event.currentTarget.value) })
                   }
                 />
               </Field>
@@ -479,10 +423,6 @@ function GlobalOptions({ systemId, mutable }: { systemId: string; mutable: boole
       </div>
     </Disclosure>
   )
-}
-
-function numberOrNull(value: string): number | null {
-  return value === '' ? null : Number(value)
 }
 
 function parseIds(value: string): number[] {

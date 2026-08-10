@@ -6,19 +6,23 @@ import { useStore } from '../store/hooks'
 import type { EntitySelection } from '../store/store'
 import { useTheme } from '../theme/ThemeProvider'
 import { ContextMenu, type MenuItem } from '../ui/primitives'
+import {
+  CommandThrottle,
+  isRotatable,
+  sendMove,
+  sendRotation,
+  sendSetPresent,
+} from '../util/robotCommand'
 import { systemIdOfKind } from '../util/systems'
 import { buildScene, pickablesOf, poseOf, type DragGhost } from './build'
 import { Canvas2DRenderer, type DrawStats } from './canvas2d'
 import { PickIndex } from './picking'
-import { RotationControl } from './RotationControl'
+import { RobotControl } from './RobotControl'
 import {
   PendingOrientation,
-  RotationThrottle,
-  isRotatable,
   rotateBy,
   rotationDirection,
   selectionKey,
-  sendRotation,
 } from './rotation'
 import type { Scene } from './scene'
 import {
@@ -128,7 +132,7 @@ export function FieldCanvas({
   const hoverRef = useRef<EntitySelection | null>(null)
   /** Keyboard turning outruns the host, so it steps from what it last asked for. */
   const pendingRotationRef = useRef(new PendingOrientation())
-  const rotationThrottleRef = useRef(new RotationThrottle())
+  const rotationThrottleRef = useRef(new CommandThrottle())
   const [stats, setStats] = useState<DrawStats | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
@@ -512,40 +516,8 @@ export function FieldCanvas({
       if (!drag.moved || !drag.target || !simharkId) return
 
       const target = drag.target
-      const worldId = target.worldId
       if (drag.kind === 'move') {
-        const position = { x_mm: Math.round(drag.worldX), y_mm: Math.round(drag.worldY) }
-        if (target.kind === 'ball') {
-          store.send(
-            panelId,
-            {
-              type: 'system',
-              data: {
-                system_id: simharkId,
-                command: { type: 'simhark', data: { type: 'move_ball', data: { world_id: worldId, position } } },
-              },
-            },
-            `move ball → ${position.x_mm}, ${position.y_mm}`,
-          )
-        } else if (target.team !== undefined && target.robotId !== undefined) {
-          store.send(
-            panelId,
-            {
-              type: 'system',
-              data: {
-                system_id: simharkId,
-                command: {
-                  type: 'simhark',
-                  data: {
-                    type: 'move_robot',
-                    data: { world_id: worldId, team: target.team, id: target.robotId, position },
-                  },
-                },
-              },
-            },
-            `move ${initial(target.team)}${target.robotId} → ${position.x_mm}, ${position.y_mm}`,
-          )
-        }
+        sendMove(store, panelId, simharkId, target, drag.worldX, drag.worldY)
       } else if (drag.kind === 'rotate' && isRotatable(target)) {
         pendingRotationRef.current.set(selectionKey(target), drag.orientation)
         sendRotation(store, panelId, simharkId, target, drag.orientation)
@@ -566,6 +538,10 @@ export function FieldCanvas({
       if (!interactive) return
       const direction = rotationDirection(event.code)
       if (direction === 0) return
+      // The robot control sits inside the field: its boxes, selects and buttons
+      // own their own keystrokes.
+      const source = event.target as HTMLElement | null
+      if (source && source !== event.currentTarget && isFormControl(source)) return
 
       const drag = dragRef.current
       const target = drag?.target ?? store.getMeta().selection
@@ -603,6 +579,11 @@ export function FieldCanvas({
     const host = hostRef.current
     if (!host) return
     const onWheel = (event: WheelEvent) => {
+      // This listener is native and on the host, so it runs before any React
+      // handler inside it could stop the event: scrolling the robot control
+      // has to be excluded here or it zooms the field at the same time.
+      const source = event.target as Element | null
+      if (source?.closest?.('.fc-rc')) return
       event.preventDefault()
       const rect = host.getBoundingClientRect()
       // `deltaY` arrives in pixels, lines or pages depending on the device, and
@@ -653,24 +634,15 @@ export function FieldCanvas({
             label: 'Remove from field',
             danger: true,
             onSelect: () =>
-              store.send(panelId, {
-                type: 'system',
-                data: {
-                  system_id: simharkId!,
-                  command: {
-                    type: 'simhark',
-                    data: {
-                      type: 'set_robot_present',
-                      data: {
-                        world_id: worldId,
-                        team: hit.selection.team!,
-                        id: hit.selection.robotId!,
-                        present: false,
-                      },
-                    },
-                  },
-                },
-              }),
+              sendSetPresent(
+                store,
+                panelId,
+                simharkId!,
+                worldId,
+                hit.selection.team!,
+                hit.selection.robotId!,
+                false,
+              ),
           })
         }
       }
@@ -690,37 +662,15 @@ export function FieldCanvas({
             label: `Place ${team} ${free} here`,
             separatorBefore: team === 'blue' && items.length > 0,
             onSelect: () => {
-              store.send(panelId, {
-                type: 'system',
-                data: {
-                  system_id: simharkId!,
-                  command: {
-                    type: 'simhark',
-                    data: {
-                      type: 'set_robot_present',
-                      data: { world_id: worldId, team, id: free, present: true },
-                    },
-                  },
-                },
-              })
-              store.send(panelId, {
-                type: 'system',
-                data: {
-                  system_id: simharkId!,
-                  command: {
-                    type: 'simhark',
-                    data: {
-                      type: 'move_robot',
-                      data: {
-                        world_id: worldId,
-                        team,
-                        id: free,
-                        position: { x_mm: Math.round(worldX), y_mm: Math.round(worldY) },
-                      },
-                    },
-                  },
-                },
-              })
+              sendSetPresent(store, panelId, simharkId!, worldId, team, free, true)
+              sendMove(
+                store,
+                panelId,
+                simharkId!,
+                { kind: 'robot', worldId, team, robotId: free },
+                worldX,
+                worldY,
+              )
             },
           })
         }
@@ -730,22 +680,7 @@ export function FieldCanvas({
           label: 'Move ball here',
           separatorBefore: items.length > 0,
           onSelect: () =>
-            store.send(panelId, {
-              type: 'system',
-              data: {
-                system_id: simharkId!,
-                command: {
-                  type: 'simhark',
-                  data: {
-                    type: 'move_ball',
-                    data: {
-                      world_id: worldId,
-                      position: { x_mm: Math.round(worldX), y_mm: Math.round(worldY) },
-                    },
-                  },
-                },
-              },
-            }),
+            sendMove(store, panelId, simharkId!, { kind: 'ball', worldId }, worldX, worldY),
         })
       }
 
@@ -793,7 +728,7 @@ export function FieldCanvas({
       style={{ background: theme.field.boundary }}
     >
       <canvas ref={canvasRef} className="fc-canvas" />
-      {interactive && <RotationControl panelId={panelId} />}
+      {interactive && <RobotControl panelId={panelId} />}
       {showStats && stats && (
         <div className="fc-stats ui-mono">
           {stats.drawMs.toFixed(2)} ms · {stats.drawCalls} calls · {stats.batches} batches ·{' '}
@@ -804,6 +739,14 @@ export function FieldCanvas({
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
     </div>
+  )
+}
+
+/** True for the controls that own their keystrokes: boxes, selects, buttons. */
+function isFormControl(element: HTMLElement): boolean {
+  return (
+    ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(element.tagName) ||
+    element.isContentEditable
   )
 }
 

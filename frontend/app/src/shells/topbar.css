@@ -145,4 +145,4 @@
   text-align: left;
   cursor: pointer;
 }
-.tb-menu button:hover { background: var(--accent); color: var(--accent-ink); }
+.tb-menu button:hover { background: var(--primary); color: var(--primary-ink); }

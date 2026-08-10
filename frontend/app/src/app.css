@@ -28,7 +28,7 @@ textarea {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 /* Scrollbars follow the theme rather than the platform's default light grey,

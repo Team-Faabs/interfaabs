@@ -25,7 +25,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .dock-splitter--row::after { left: 2px; right: 2px; }
 .dock-splitter--column { flex-basis: 6px; cursor: row-resize; }
 .dock-splitter--column::after { top: 2px; bottom: 2px; }
-.dock-splitter:hover::after { background: var(--accent); }
+.dock-splitter:hover::after { background: var(--primary); }
 
 /* ── tabsets ─────────────────────────────────────────────────────────── */
 
@@ -130,7 +130,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   text-align: left;
   cursor: pointer;
 }
-.dock-add-menu button:hover { background: var(--accent); color: var(--accent-ink); }
+.dock-add-menu button:hover { background: var(--primary); color: var(--primary-ink); }
 .dock-add-menu i { font-style: normal; width: 14px; text-align: center; opacity: 0.8; }
 .dock-add-menu em { margin-left: auto; font-style: normal; font-size: var(--font-size-xs); opacity: 0.6; }
 
@@ -167,7 +167,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .dock-tab.is-active {
   color: var(--text);
   background: var(--surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 .dock-tab-close {
   display: grid;
@@ -209,8 +209,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 }
 .dock-strip--rail .dock-tab:hover { background: var(--surface-2); color: var(--text); }
 .dock-strip--rail .dock-tab.is-active {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--primary-soft);
+  border-color: var(--primary-line);
   color: var(--text);
   box-shadow: none;
 }
@@ -238,7 +238,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   position: fixed;
   z-index: 80;
   padding: 4px 10px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
@@ -250,8 +250,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .dock-drop {
   position: absolute;
   z-index: 5;
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
   pointer-events: none;
 }
