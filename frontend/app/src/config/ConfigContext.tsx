@@ -11,7 +11,7 @@ import {
 
 import type { DockNode } from '../docking/model'
 import { defaultWorkspaces } from './defaults'
-import { loadConfig, saveConfig } from './persistence'
+import { STORAGE_KEY, flushConfig, loadConfig, saveConfig } from './persistence'
 import type { AppConfig, FieldSettings, WorkspaceConfig } from './types'
 
 interface ConfigContextValue {
@@ -42,6 +42,46 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     saveConfig(config)
   }, [config])
 
+  // The debounced write must survive the page going away: a rebuilt host
+  // reloads the tab from under the operator, and `pagehide` is the last point
+  // at which storage is still writable.
+  useEffect(() => {
+    const flush = () => flushConfig()
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flushConfig()
+    }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHidden)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onHidden)
+      flushConfig()
+    }
+  }, [])
+
+  // Every write stores the whole config, so a second window holding a copy from
+  // when it loaded would put that copy back the next time anything changed in
+  // it, undoing whatever was arranged over here. Adopting the other window's
+  // write keeps the two in step instead.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || event.newValue === null) return
+      setConfig((current) => {
+        const stored = loadConfig().config
+        // Which workspace a window shows is a per-window choice; everything
+        // else is one shared document.
+        const next = stored.workspaces.some((w) => w.id === current.activeWorkspaceId)
+          ? { ...stored, activeWorkspaceId: current.activeWorkspaceId }
+          : stored
+        // Identical content has to keep the same object, or two windows would
+        // trade writes forever, each one waking the other.
+        return JSON.stringify(next) === JSON.stringify(current) ? current : next
+      })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   const update = useCallback((patch: Partial<AppConfig>) => {
     setConfig((current) => ({ ...current, ...patch }))
   }, [])
@@ -60,12 +100,20 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setLayout = useCallback((layout: DockNode) => {
-    setConfig((current) => ({
-      ...current,
-      workspaces: current.workspaces.map((workspace) =>
-        workspace.id === current.activeWorkspaceId ? { ...workspace, layout } : workspace,
-      ),
-    }))
+    setConfig((current) => {
+      // Resolved the same way the rendered workspace is, so a dangling active
+      // id cannot make every layout change land on no workspace at all and be
+      // dropped without a trace.
+      const target = current.workspaces.some((w) => w.id === current.activeWorkspaceId)
+        ? current.activeWorkspaceId
+        : current.workspaces[0]?.id
+      return {
+        ...current,
+        workspaces: current.workspaces.map((workspace) =>
+          workspace.id === target ? { ...workspace, layout } : workspace,
+        ),
+      }
+    })
   }, [])
 
   const setActiveWorkspace = useCallback((id: string) => {

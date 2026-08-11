@@ -360,8 +360,7 @@ export class InterfaceStore {
       sessions: bootstrap.sessions,
       capabilities: bootstrap.capabilities,
       lastCommandOrigin: bootstrap.last_accepted_command_origin,
-      activeSessionId:
-        this.meta.activeSessionId ?? preferredSession(bootstrap.sessions)?.id ?? null,
+      ...rebindSession(bootstrap.sessions, this.meta.activeSessionId, this.meta.cursor),
     })
   }
 
@@ -375,10 +374,14 @@ export class InterfaceStore {
         this.patchMeta({
           systems: message.data.systems,
           sessions: message.data.sessions,
-          activeSessionId:
-            this.meta.activeSessionId ?? preferredSession(message.data.sessions)?.id ?? null,
+          ...rebindSession(message.data.sessions, this.meta.activeSessionId, this.meta.cursor),
           worldIds: this.currentWorldIds(),
           debugLayers: this.currentDebugLayers(),
+          // The snapshots were just replaced wholesale, so what the panels are
+          // showing is no longer what the host published.
+          ...(this.propertiesChanged()
+            ? { propertiesVersion: this.meta.propertiesVersion + 1 }
+            : {}),
         })
         this.notifyFrame()
         break
@@ -828,6 +831,32 @@ export function foldRecordingSessions(
       : null
   }
   return null
+}
+
+/**
+ * Re-points the active session and the viewer cursor at a freshly published
+ * session list.
+ *
+ * A host restart hands out new session ids, so the ones a long-lived tab is
+ * holding name sessions that no longer exist. Left alone they resolve to no
+ * active session at all, which `canMutate` reads as "not mutable" — so every
+ * command in the interface stays disabled until the operator reloads the page.
+ */
+export function rebindSession(
+  sessions: SessionDescriptor[],
+  activeSessionId: SessionId | null,
+  cursor: ViewerCursor | null,
+): Pick<MetaState, 'activeSessionId' | 'cursor'> {
+  const known = (id: SessionId | null | undefined): boolean =>
+    id != null && sessions.some((session) => session.id === id)
+  return {
+    activeSessionId: known(activeSessionId)
+      ? activeSessionId
+      : (preferredSession(sessions)?.id ?? null),
+    // A cursor is scoped to one session. When that session is gone, a detached
+    // one would hold the interface in review over nothing.
+    cursor: known(cursor?.session_id) ? cursor : null,
+  }
 }
 
 /** Appends to a system's reload history when its generation advances. */

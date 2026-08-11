@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
 
-import type { CommandAction, SystemDescriptor } from '../protocol/types'
+import type {
+  CommandAction,
+  SessionDescriptor,
+  SystemDescriptor,
+  ViewerCursor,
+} from '../protocol/types'
 import {
   appendGeneration,
   describeAction,
   foldRecordingSessions,
+  rebindSession,
   selectionOfAction,
 } from './store'
 
@@ -20,6 +26,28 @@ function system(generation: number): SystemDescriptor {
     generation,
     capabilities: [],
   }
+}
+
+function session(
+  id: string,
+  lifecycle: SessionDescriptor['lifecycle'] = 'running',
+): SessionDescriptor {
+  return {
+    id,
+    label: id,
+    kind: 'simulation',
+    lifecycle,
+    mutable: true,
+    created_at_ns: 0,
+    system_ids: ['simhark'],
+    world_count: 1,
+    live_frame: 0,
+    terminal_error: null,
+  }
+}
+
+function cursor(sessionId: string, live = true): ViewerCursor {
+  return { id: 'cursor', session_id: sessionId, live, frame: live ? null : 42, world_ids: [] }
 }
 
 describe('foldRecordingSessions', () => {
@@ -63,6 +91,43 @@ describe('foldRecordingSessions', () => {
       },
     }
     assert.equal(foldRecordingSessions([SESSION], action), null)
+  })
+})
+
+describe('rebindSession', () => {
+  it('keeps a session the host still publishes', () => {
+    const bound = rebindSession([session(OTHER), session(SESSION)], SESSION, cursor(SESSION))
+    assert.equal(bound.activeSessionId, SESSION)
+    assert.deepEqual(bound.cursor, cursor(SESSION))
+  })
+
+  it('adopts a session when the tab has none yet', () => {
+    assert.equal(rebindSession([session(SESSION)], null, null).activeSessionId, SESSION)
+  })
+
+  it('re-points at the new session after a host restart', () => {
+    // The restarted host hands out fresh ids, so the one this tab held is gone.
+    // Holding on to it resolves to no active session, which reads as immutable
+    // and disables every command until the page is reloaded.
+    const bound = rebindSession([session(OTHER)], SESSION, null)
+    assert.equal(bound.activeSessionId, OTHER)
+  })
+
+  it('drops a cursor whose session no longer exists', () => {
+    const bound = rebindSession([session(OTHER)], SESSION, cursor(SESSION, false))
+    assert.equal(bound.cursor, null, 'a detached cursor must not survive its session')
+  })
+
+  it('prefers a running session over an empty one', () => {
+    const bound = rebindSession([session(SESSION, 'empty'), session(OTHER, 'running')], null, null)
+    assert.equal(bound.activeSessionId, OTHER)
+  })
+
+  it('clears everything when the host publishes no sessions', () => {
+    assert.deepEqual(rebindSession([], SESSION, cursor(SESSION)), {
+      activeSessionId: null,
+      cursor: null,
+    })
   })
 })
 

@@ -11,7 +11,7 @@ import {
 } from './defaults'
 import type { AppConfig, WorkspaceConfig } from './types'
 
-const STORAGE_KEY = 'interfaabs.config'
+export const STORAGE_KEY = 'interfaabs.config'
 const QUARANTINE_KEY = 'interfaabs.config.corrupt'
 
 export interface LoadResult {
@@ -158,18 +158,33 @@ function isThemeId(value: unknown): value is AppConfig['theme'] {
 }
 
 let writeTimer: ReturnType<typeof setTimeout> | null = null
+let pendingWrite: AppConfig | null = null
 
 /** Debounced: layout drags and splitter moves would otherwise write per frame. */
 export function saveConfig(config: AppConfig): void {
+  pendingWrite = config
   if (writeTimer !== null) globalThis.clearTimeout(writeTimer)
-  writeTimer = globalThis.setTimeout(() => {
+  writeTimer = globalThis.setTimeout(flushConfig, 300)
+}
+
+/**
+ * Writes a debounced config straight away. The host forces a reload as soon as
+ * it sees a stale bundle, so a layout changed in the last moments before a
+ * rebuild lands would otherwise never reach storage.
+ */
+export function flushConfig(): void {
+  if (writeTimer !== null) {
+    globalThis.clearTimeout(writeTimer)
     writeTimer = null
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-    } catch {
-      /* quota or blocked storage — the session keeps working in memory */
-    }
-  }, 300)
+  }
+  const config = pendingWrite
+  pendingWrite = null
+  if (!config) return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+  } catch {
+    /* quota or blocked storage — the session keeps working in memory */
+  }
 }
 
 export function clearStoredConfig(): void {

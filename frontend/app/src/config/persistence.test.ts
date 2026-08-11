@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'vitest'
 
 import { defaultWorkspaces } from './defaults'
-import { exportWorkspaces, importWorkspaces, loadConfig, saveConfig } from './persistence'
+import {
+  exportWorkspaces,
+  flushConfig,
+  importWorkspaces,
+  loadConfig,
+  saveConfig,
+} from './persistence'
 
 const STORAGE_KEY = 'interfaabs.config'
 const QUARANTINE_KEY = 'interfaabs.config.corrupt'
@@ -170,6 +176,27 @@ describe('workspace bundles', () => {
 })
 
 describe('saveConfig', () => {
+  it('writes the debounced value when flushed', () => {
+    const config = loadConfig().config
+    config.workspaces[1].label = 'arranged just before the host reloaded us'
+    saveConfig(config)
+    assert.equal(localStorage.getItem(STORAGE_KEY), null, 'the write is debounced')
+
+    flushConfig()
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
+    assert.equal(stored.workspaces[1].label, 'arranged just before the host reloaded us')
+  })
+
+  it('has nothing left to flush once it has written', () => {
+    saveConfig(loadConfig().config)
+    flushConfig()
+    localStorage.removeItem(STORAGE_KEY)
+    // A second flush must not resurrect the value it already wrote, or closing
+    // a stale window would put its copy back over a newer one.
+    flushConfig()
+    assert.equal(localStorage.getItem(STORAGE_KEY), null)
+  })
+
   it('survives storage that refuses to write', () => {
     Object.defineProperty(globalThis, 'localStorage', {
       value: {
