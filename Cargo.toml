@@ -5,6 +5,7 @@ members = [
   "crates/webinterface-core",
   "crates/webinterface-assets",
   "crates/webinterface-crashpilot-bridge",
+  "crates/webinterface-dehumanized-schema",
   "crates/interfaabs",
   "xtask",
 ]
