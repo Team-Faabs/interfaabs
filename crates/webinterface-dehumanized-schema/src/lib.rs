@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
-use dehumanized::skills::registry::{SKILLS, PLAYS};
-use dehumanized::skill::SkillFactory;
 use dehumanized::play::PlayFactory;
+use dehumanized::skill::SkillFactory;
+use dehumanized::skills::registry::{PLAYS, SKILLS};
+use serde_json::{Value, json};
 
 /// Schema-renderer document for the runtime registry browser.
 ///
@@ -58,11 +58,11 @@ fn registry_part(
   wip: bool,
 ) -> Value {
   let entries = entries
-      .iter()
-      .map(|(name, factory)| {
-        let definition = factory.def();
-        let part_id = format!("{id}.{}", schema_id(name));
-        json!({
+    .iter()
+    .map(|(name, factory)| {
+      let definition = factory.def();
+      let part_id = format!("{id}.{}", schema_id(name));
+      json!({
         "id": *name,
         "label": *name,
         "badge": wip.then_some("WIP"),
@@ -91,8 +91,8 @@ fn registry_part(
           },
         },
       })
-      })
-      .collect::<Vec<_>>();
+    })
+    .collect::<Vec<_>>();
 
   json!({
     "kind": "registry",
@@ -103,7 +103,6 @@ fn registry_part(
   })
 }
 
-
 fn registry_play_part(
   id: &str,
   title: &str,
@@ -112,11 +111,11 @@ fn registry_play_part(
   wip: bool,
 ) -> Value {
   let entries = entries
-      .iter()
-      .map(|(name, factory)| {
-        let definition = factory.def();
-        let part_id = format!("{id}.{}", schema_id(name));
-        json!({
+    .iter()
+    .map(|(name, factory)| {
+      let definition = factory.def();
+      let part_id = format!("{id}.{}", schema_id(name));
+      json!({
         "id": *name,
         "label": *name,
         "badge": wip.then_some("WIP"),
@@ -145,8 +144,8 @@ fn registry_play_part(
           },
         },
       })
-      })
-      .collect::<Vec<_>>();
+    })
+    .collect::<Vec<_>>();
 
   json!({
     "kind": "registry",
@@ -159,13 +158,13 @@ fn registry_play_part(
 
 fn schema_id(name: &str) -> String {
   name
-      .chars()
-      .map(|character| {
-        if character.is_ascii_alphanumeric() {
-          character.to_ascii_lowercase()
-        } else {
-          '_'
-        }
-      })
-      .collect()
+    .chars()
+    .map(|character| {
+      if character.is_ascii_alphanumeric() {
+        character.to_ascii_lowercase()
+      } else {
+        '_'
+      }
+    })
+    .collect()
 }
